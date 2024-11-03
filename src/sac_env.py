@@ -35,7 +35,7 @@ class SacEnv(gym.Env):
 
         self.laserscan_maxcap = 3.5
         self.laserscan_mincap = 0.12
-        self.laserscan_min = self.laserscan_maxcap
+        self.laserscan_closest = self.laserscan_maxcap
         self.laserscan = np.full(24, self.laserscan_maxcap)
 
         self.angle_cap = 2 * math.pi
@@ -148,7 +148,7 @@ class SacEnv(gym.Env):
             laserscan = np.append(laserscan, laserscan_360[i * 15])
 
         self.laserscan = laserscan
-        self.laserscan_min = np.min(laserscan_360)
+        self.laserscan_closest = np.min(laserscan_360)
 
     def odometry_callback(self, odom):
         position = odom.pose.pose.position
@@ -182,7 +182,7 @@ class SacEnv(gym.Env):
             ) - yaw
         )
 
-        laserscan_min = self.laserscan_min
+        laserscan_closest = self.laserscan_closest
         laserscan = self.laserscan
 
         return np.nan_to_num(
@@ -191,7 +191,7 @@ class SacEnv(gym.Env):
                     goal_distance_normalised,
                     goal_angle,
                     yaw,
-                    laserscan_min,
+                    laserscan_closest,
                 ]),
                 laserscan
             )
@@ -204,7 +204,7 @@ class SacEnv(gym.Env):
         self.publish_velocity(0)
 
         while (self.init_positions == self.init_positions_previous).all():
-            self.init_positions = self.init_stage_positions(2)
+            self.init_positions = self.init_stage_positions(3)
 
         self.spawn_position = self.init_positions[0]
         self.init_positions_previous = self.init_positions
@@ -230,7 +230,7 @@ class SacEnv(gym.Env):
         self.step_count = 0
         self.stagnant_count = 0
 
-        self.laserscan_min = self.laserscan_maxcap
+        self.laserscan_closest = self.laserscan_maxcap
 
         self.observation_state = self._get_observation_state()
 
@@ -258,7 +258,7 @@ class SacEnv(gym.Env):
         print(f"goal_distance_normalised: {self.observation_state[0]}")
         print(f"goal_angle: {self.observation_state[1]}")
         print(f"yaw: {self.observation_state[2]}")
-        print(f"laserscan_min: {self.observation_state[3]}")
+        print(f"laserscan_closest: {self.observation_state[3]}")
         print(f"laserscan_front: {self.observation_state[4]}")
         print(f"laserscan_left: {self.observation_state[10]}")
         print(f"laserscan_back: {self.observation_state[16]}")
@@ -287,7 +287,7 @@ class SacEnv(gym.Env):
 
         goal_angle = self.observation_state[1]
 
-        laserscan_min = self.observation_state[3]
+        laserscan_closest = self.observation_state[3]
 
         step_count = self.step_count
         stagnant_count = self.stagnant_count
@@ -301,7 +301,7 @@ class SacEnv(gym.Env):
             2 * (1 - goal_distance_normalised) + ((1 - goal_distance_normalised) ** 2)
         )
         reward_facing_goal = 0.5 if (
-            (abs(goal_angle) < math.pi/4) and (laserscan_min > collision_threshold + 0.02)
+            (abs(goal_angle) < math.pi/4) and (laserscan_closest > collision_threshold + 0.02)
         ) else 0
 
         if abs(goal_distance - goal_distance_previous) < 0.002 and goal_distance >= self.goal_radius:
@@ -314,9 +314,9 @@ class SacEnv(gym.Env):
         self.goal_distance_previous = goal_distance
 
         penalty_obstacle_proximity = 0 if (
-            laserscan_min > 0.3
+            laserscan_closest > 0.3
         ) else (
-            -10 * (((self.laserscan_maxcap - laserscan_min) / (self.laserscan_maxcap - self.laserscan_mincap)) ** 50)
+            -10 * (((self.laserscan_maxcap - laserscan_closest) / (self.laserscan_maxcap - self.laserscan_mincap)) ** 50)
         )
         penalty_collision = -10
         penalty_step_count = -(1 / self.max_step_count) * (step_count - 1)
@@ -329,10 +329,10 @@ class SacEnv(gym.Env):
             if self.goal_distance_record > goal_distance_normalised:
                 self.goal_distance_record = goal_distance_normalised
 
-            if laserscan_min < collision_threshold:
+            if laserscan_closest < collision_threshold:
                 reward = penalty_collision + penalty_obstacle_proximity + penalty_step_count
                 self.end_episode()
-                print(f"!!!!!ROBOT COLLISION!!!!! scan: {laserscan_min}")
+                print(f"!!!!!ROBOT COLLISION!!!!! scan: {laserscan_closest}")
             else:
                 reward = reward_distance_from_goal
                 reward += penalty_obstacle_proximity + penalty_step_count
