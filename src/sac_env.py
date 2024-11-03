@@ -156,9 +156,8 @@ class SacEnv(gym.Env):
         laserscan_360 = np.clip(np.array(scan.ranges), self.laserscan_mincap, self.laserscan_maxcap)
         laserscan = np.array([])
 
-        for i in range(len(laserscan_360)):
-            if i % 15 == 0:
-                laserscan = np.append(laserscan, laserscan_360[i])
+        for i in range(24):
+            laserscan = np.append(laserscan, laserscan_360[i * 15])
 
         self.laserscan = laserscan
         self.laserscan_min = np.min(laserscan_360)
