@@ -300,7 +300,9 @@ class SacEnv(gym.Env):
         ) else (
             2 * (1 - goal_distance_normalised) + ((1 - goal_distance_normalised) ** 2)
         )
-        reward_facing_goal = 0.5 if (abs(goal_angle) < math.pi/4) else 0
+        reward_facing_goal = 0.5 if (
+            (abs(goal_angle) < math.pi/4) and (laserscan_min > collision_threshold + 0.02)
+        ) else 0
 
         if abs(goal_distance - goal_distance_previous) < 0.002 and goal_distance >= self.goal_radius:
             stagnant_count += 1
@@ -335,8 +337,7 @@ class SacEnv(gym.Env):
                 reward = reward_distance_from_goal
                 reward += penalty_obstacle_proximity + penalty_step_count
 
-                if laserscan_min > collision_threshold + 0.02:
-                    reward += reward_facing_goal
+                reward += reward_facing_goal
 
                 if goal_distance < self.goal_radius:
                     reward += reward_goal
