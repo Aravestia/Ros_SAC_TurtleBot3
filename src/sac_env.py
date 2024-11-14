@@ -40,6 +40,7 @@ class SacEnv(gym.Env):
 
         self.angle_cap = 2 * math.pi
 
+        self.stage = 3
         self.init_positions = np.array([[0.0, 0.0], [1.0, 1.0]])
         self.init_positions_previous = self.init_positions
         self.spawn_position = self.init_positions[0]
@@ -204,7 +205,7 @@ class SacEnv(gym.Env):
         self.publish_velocity(0)
 
         while (self.init_positions == self.init_positions_previous).all():
-            self.init_positions = self.init_stage_positions(3)
+            self.init_positions = self.init_stage_positions(self.stage)
 
         self.spawn_position = self.init_positions[0]
         self.init_positions_previous = self.init_positions
@@ -349,7 +350,9 @@ class SacEnv(gym.Env):
                     self.goal_df.loc[self.goal_count] = {
                         'id': self.goal_count, 
                         'steps': self.step_count, 
-                        'time': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                        'stage': self.stage,
+                        'time': datetime.now().strftime("%d/%m/%Y"),
+
                     }
                     self.goal_df.to_csv(self.goal_database)
 
