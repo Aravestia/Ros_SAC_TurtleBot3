@@ -161,12 +161,12 @@ class SacEnv(gym.Env):
 
         self.yaw = euler[2]
 
-    def publish_velocity(self, angular, laserscan_closest=1, goal_distance=1):
+    def publish_velocity(self, angular_velocity, laserscan_closest=1, goal_distance=1):
         twist = Twist()
         twist.linear.x = self.velocity_multiplier if (
             laserscan_closest > 0.3 or goal_distance < self.goal_radius + 0.1
         ) else (0.5 * self.velocity_multiplier)
-        twist.angular.z = angular
+        twist.angular.z = angular_velocity
         self.twist_publisher.publish(twist)
 
     def _get_observation_state(self):
@@ -253,7 +253,7 @@ class SacEnv(gym.Env):
         #self.velocity = float((action[0] + 1) * 0.5 * self.velocity_multiplier)
         self.angular_velocity = float(action[0] * self.angular_velocity_multiplier)
         self.publish_velocity(
-            angular = self.angular_velocity,
+            angular_velocity = self.angular_velocity,
             laserscan_closest = self.observation_state[3], 
             goal_distance = self.observation_state[0] * self.goal_distance_from_spawn
         )
