@@ -161,9 +161,9 @@ class SacEnv(gym.Env):
 
         self.yaw = euler[2]
 
-    def publish_velocity(self, angular):
+    def publish_velocity(self, angular, laserscan_closest=1):
         twist = Twist()
-        twist.linear.x = self.velocity_multiplier
+        twist.linear.x = self.velocity_multiplier if (laserscan_closest > 0.3) else (0.5 * self.velocity_multiplier)
         twist.angular.z = angular
         self.twist_publisher.publish(twist)
 
@@ -245,10 +245,12 @@ class SacEnv(gym.Env):
 
         self.done = False
         self.truncated = False
+        
+        self.observation_state = self._get_observation_state()
 
         #self.velocity = float((action[0] + 1) * 0.5 * self.velocity_multiplier)
         self.angular_velocity = float(action[0] * self.angular_velocity_multiplier)
-        self.publish_velocity(self.angular_velocity)
+        self.publish_velocity(self.angular_velocity, self.observation_state[3])
 
         rospy.sleep(0.08)
 
@@ -280,8 +282,6 @@ class SacEnv(gym.Env):
         return self.observation_state, reward, self.done, self.truncated, {}
 
     def _compute_reward(self):
-        self.observation_state = self._get_observation_state()
-
         goal_distance_normalised = self.observation_state[0]
         goal_distance = goal_distance_normalised * self.goal_distance_from_spawn
         goal_distance_previous = self.goal_distance_previous
@@ -352,7 +352,6 @@ class SacEnv(gym.Env):
                         'steps': self.step_count, 
                         'stage': self.stage,
                         'time': datetime.now().strftime("%d/%m/%Y"),
-
                     }
                     self.goal_df.to_csv(self.goal_database)
 
