@@ -162,10 +162,12 @@ class SacEnv(gym.Env):
         self.yaw = euler[2]
 
     def publish_velocity(self, angular_velocity, laserscan_closest=1, goal_distance=1):
+        self.velocity = self.velocity_multiplier if (
+            goal_distance > self.goal_radius + 0.15
+        ) else (0.25 * self.velocity_multiplier)
+
         twist = Twist()
-        twist.linear.x = self.velocity_multiplier if (
-            laserscan_closest > 0.3 or goal_distance < self.goal_radius + 0.1
-        ) else (0.5 * self.velocity_multiplier)
+        twist.linear.x = self.velocity
         twist.angular.z = angular_velocity
         self.twist_publisher.publish(twist)
 
@@ -465,7 +467,7 @@ class SacEnv(gym.Env):
         return angle
 
 def main(args=None):
-    timesteps = 0.5 * 10000
+    timesteps = 1 * 10000
 
     rospy.init_node('sac_env', anonymous=True)
 
