@@ -32,7 +32,7 @@ class SpinObstacle1():
             if name in model_names:
                 self.set_model_state(msg)
 
-            speed = 0.07
+            speed = 0.08
 
             self.yaw += ((math.pi / 360) * speed)
 
