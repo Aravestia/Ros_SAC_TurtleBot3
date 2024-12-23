@@ -467,7 +467,7 @@ class SacEnv(gym.Env):
         return angle
 
 def main(args=None):
-    timesteps = 1 * 10000
+    timesteps = 12 * 10000
 
     rospy.init_node('sac_env', anonymous=True)
 
