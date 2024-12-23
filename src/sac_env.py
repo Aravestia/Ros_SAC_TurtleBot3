@@ -28,7 +28,7 @@ class SacEnv(gym.Env):
     def __init__(self, amr_model='turtlebot3_burger'):
         super(SacEnv, self).__init__()
 
-        self.velocity_multiplier = 0.22
+        self.velocity_multiplier = 0.15
         self.angular_velocity_multiplier = 2.84
         self.velocity = self.velocity_multiplier
         self.angular_velocity = 0.0
@@ -40,7 +40,7 @@ class SacEnv(gym.Env):
 
         self.angle_cap = 2 * math.pi
 
-        self.stage = 3
+        self.stage = 4
         self.init_positions = np.array([[0.0, 0.0], [1.0, 1.0]])
         self.init_positions_previous = self.init_positions
         self.spawn_position = self.init_positions[0]
@@ -90,9 +90,6 @@ class SacEnv(gym.Env):
         ### Set Specific properties for world ###
         self.model_names = self.get_world_properties().model_names
         for i in range(1,10001):
-            if (f'obstacle_{str(i)}') in self.model_names:
-               self.delete_model(f'obstacle_{str(i)}')
-
             if (f'goal_marker_{str(i)}') in self.model_names:
                 self.delete_model(f'goal_marker_{str(i)}')
         #########################################
@@ -444,12 +441,10 @@ class SacEnv(gym.Env):
 
         if stage == 4:
             init_positions = np.array(random.choice([
-                #[[2, 2], [0.5, -1.5]],
-                #[[-2, -2], [-1, 1]],
-                #[[2, -2], [-2, -1]],
-                #[[-2, 2], [-1, -1]]
-                [[2, 2], [-2, -2]],
-                [[-2, -2], [2, 2]]
+                [[2, -1.5], [-2, 2]],
+                [[1.5, -2], [-2, 2]],
+                [[-2, 1.5], [2, -2]],
+                [[-1.5, 2], [2, -2]]
             ]))
 
         return init_positions
