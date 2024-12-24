@@ -42,7 +42,7 @@ class SpinObstacle2():
             self.set_model_state(msg)
             self.set_model_state(msg_2)    
 
-            speed = 0.003
+            speed = 0.0017
 
             self.x1, self.y1 = self.set_pos(self.x1, self.y1, speed)
             self.x2, self.y2 = self.set_pos(self.x2, self.y2, speed)

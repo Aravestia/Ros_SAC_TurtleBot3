@@ -20,15 +20,15 @@ import os
 import numpy as np
 import pandas as pd
 import random
-#import time
+import time
 
 from sdf_files import goal_sdf
 
 class SacEnv(gym.Env):
-    def __init__(self, amr_model='turtlebot3_burger'):
+    def __init__(self, amr_model='turtlebot3_burger', epoch=0):
         super(SacEnv, self).__init__()
 
-        self.velocity_multiplier = 0.15
+        self.velocity_multiplier = 0.18
         self.angular_velocity_multiplier = 2.84
         self.velocity = self.velocity_multiplier
         self.angular_velocity = 0.0
@@ -60,13 +60,14 @@ class SacEnv(gym.Env):
         self.truncated = False
         self.total_timesteps = 0
         self.step_count = 0
-        self.max_step_count = 500
+        self.max_step_count = 10000
         self.stagnant_count = 0
         self.max_stagnant_count = 10
         self.reset_count = 0
         self.observation_state = []
 
         self.amr_model = amr_model
+        self.epoch = epoch
 
         self.goal_database = r"/home/aravestia/isim/noetic/src/robot_planner/src/goal.csv"
         self.goal_df = pd.read_csv(self.goal_database, header=0, index_col=0)
@@ -257,7 +258,7 @@ class SacEnv(gym.Env):
             goal_distance = self.observation_state[0] * self.goal_distance_from_spawn
         )
 
-        rospy.sleep(0.08)
+        rospy.sleep(0.01)
 
         reward = self._compute_reward()
 
@@ -276,6 +277,7 @@ class SacEnv(gym.Env):
         print(f"velocity : {self.velocity}")
         print(f"angular_velocity : {self.angular_velocity}")
         print(" ")
+        print(f"epoch: {self.epoch}")
         print(f"total_timesteps: {self.total_timesteps}")
         print(f"step_count: {self.step_count}/{self.max_step_count}")
         print(f"reward: {reward}")
@@ -322,7 +324,7 @@ class SacEnv(gym.Env):
         penalty_obstacle_proximity = 0 if (
             laserscan_closest > 0.3
         ) else (
-            -10 * (((self.laserscan_maxcap - laserscan_closest) / (self.laserscan_maxcap - self.laserscan_mincap)) ** 50)
+            -10 * (((self.laserscan_maxcap - laserscan_closest) / (self.laserscan_maxcap - self.laserscan_mincap)) ** 30)
         )
         penalty_collision = -10
         penalty_step_count = -(1 / self.max_step_count) * (step_count - 1)
@@ -441,8 +443,8 @@ class SacEnv(gym.Env):
 
         if stage == 4:
             init_positions = np.array(random.choice([
-                [[2, -1.5], [-2, 2]],
-                [[1.5, -2], [-2, 2]],
+                #[[2, -1.5], [-2, 2]],
+                #[[1.5, -2], [-2, 2]],
                 [[-2, 1.5], [2, -2]],
                 [[-1.5, 2], [2, -2]]
             ]))
@@ -462,27 +464,30 @@ class SacEnv(gym.Env):
         return angle
 
 def main(args=None):
-    timesteps = 12 * 10000
+    epochs = 1000
+    timesteps = 50000
 
-    rospy.init_node('sac_env', anonymous=True)
+    for i in range(epochs):
+        rospy.init_node('sac_env', anonymous=True)
 
-    # Depends on map
-    amr_model = 'turtlebot3_burger'
-    model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/sac_model.pth"
+        # Depends on map
+        amr_model = 'turtlebot3_burger'
+        model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/sac_model.pth"
 
-    env = SacEnv(amr_model=amr_model)
-    #env.reset()
+        env = SacEnv(amr_model=amr_model, epoch=(i + 1))
+        #env.reset()
 
-    check_env(env)
+        check_env(env)
 
-    print(os.path.exists(model_pth))
-    model = SAC.load(path=model_pth, env=env) if os.path.exists(model_pth) else SAC('MlpPolicy', env, ent_coef='auto', verbose=1)
-    model.learn(total_timesteps=timesteps)
-    model.save(model_pth)
+        print(os.path.exists(model_pth))
+        model = SAC.load(path=model_pth, env=env) if os.path.exists(model_pth) else SAC('MlpPolicy', env, ent_coef='auto', verbose=1)
+        model.learn(total_timesteps=timesteps)
+        model.save(model_pth)
 
-    print("model saved!")
+        print(f"model saved! Epoch: {i + 1}")
 
-    env.reset()
+        env.reset()
+        time.sleep(5)
 
     #obs = env.reset()
     #done = False
