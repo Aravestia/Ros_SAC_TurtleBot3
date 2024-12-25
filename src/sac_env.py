@@ -28,7 +28,7 @@ class SacEnv(gym.Env):
     def __init__(self, amr_model='turtlebot3_burger', epoch=0):
         super(SacEnv, self).__init__()
 
-        self.velocity_multiplier = 0.18
+        self.velocity_multiplier = 0.13
         self.angular_velocity_multiplier = 2.84
         self.velocity = self.velocity_multiplier
         self.angular_velocity = 0.0
@@ -36,11 +36,11 @@ class SacEnv(gym.Env):
         self.laserscan_maxcap = 3.5
         self.laserscan_mincap = 0.12
         self.laserscan_closest = self.laserscan_maxcap
-        self.laserscan = np.full(24, self.laserscan_maxcap)
+        self.laserscan = np.full(12, self.laserscan_maxcap)
 
         self.angle_cap = 2 * math.pi
 
-        self.stage = 4
+        self.stage = 5
         self.init_positions = np.array([[0.0, 0.0], [1.0, 1.0]])
         self.init_positions_previous = self.init_positions
         self.spawn_position = self.init_positions[0]
@@ -111,9 +111,8 @@ class SacEnv(gym.Env):
         Observation space: [
             normalised distance from robot to goal,
             angle from robot to goal (radians),
-            yaw
             laserscan distance to closest obstacle,
-            laserscan spatial values (24 values 15 deg apart)
+            laserscan spatial values (12 values 30 deg apart)
         ]
         '''
         self.observation_space = spaces.Box(
@@ -121,21 +120,19 @@ class SacEnv(gym.Env):
                 np.array([
                     0.0,
                     -self.angle_cap,
-                    -self.angle_cap,
                     self.laserscan_mincap,
                 ]),
-                np.full(24, self.laserscan_mincap)
+                np.full(12, self.laserscan_mincap)
             ),
             high=np.append(
                 np.array([
                     100.0,
                     self.angle_cap,
-                    self.angle_cap,
                     self.laserscan_maxcap,
                 ]),
-                np.full(24, self.laserscan_maxcap)
+                np.full(12, self.laserscan_maxcap)
             ),
-            shape=(28,), 
+            shape=(15,), 
             dtype=np.float32
         )
 
@@ -143,8 +140,8 @@ class SacEnv(gym.Env):
         laserscan_360 = np.clip(np.array(scan.ranges), self.laserscan_mincap, self.laserscan_maxcap)
         laserscan = np.array([])
 
-        for i in range(24):
-            laserscan = np.append(laserscan, laserscan_360[i * 15])
+        for i in range(12):
+            laserscan = np.append(laserscan, laserscan_360[i * 30])
 
         self.laserscan = laserscan
         self.laserscan_closest = np.min(laserscan_360)
@@ -162,7 +159,7 @@ class SacEnv(gym.Env):
     def publish_velocity(self, angular_velocity, laserscan_closest=1, goal_distance=1):
         self.velocity = self.velocity_multiplier if (
             goal_distance > self.goal_radius + 0.15
-        ) else (0.25 * self.velocity_multiplier)
+        ) else (0.5 * self.velocity_multiplier)
 
         twist = Twist()
         twist.linear.x = self.velocity
@@ -193,7 +190,6 @@ class SacEnv(gym.Env):
                 np.array([
                     goal_distance_normalised,
                     goal_angle,
-                    yaw,
                     laserscan_closest,
                 ]),
                 laserscan
@@ -266,12 +262,11 @@ class SacEnv(gym.Env):
         print("OBSERVATION SPACE")
         print(f"goal_distance_normalised: {self.observation_state[0]}")
         print(f"goal_angle: {self.observation_state[1]}")
-        print(f"yaw: {self.observation_state[2]}")
-        print(f"laserscan_closest: {self.observation_state[3]}")
-        print(f"laserscan_front: {self.observation_state[4]}")
-        print(f"laserscan_left: {self.observation_state[10]}")
-        print(f"laserscan_back: {self.observation_state[16]}")
-        print(f"laserscan_right: {self.observation_state[22]}")
+        print(f"laserscan_closest: {self.observation_state[2]}")
+        print(f"laserscan_front: {self.observation_state[3]}")
+        print(f"laserscan_left: {self.observation_state[6]}")
+        print(f"laserscan_back: {self.observation_state[9]}")
+        print(f"laserscan_right: {self.observation_state[12]}")
         print(" ")
         print("ACTION SPACE")
         print(f"velocity : {self.velocity}")
@@ -295,22 +290,14 @@ class SacEnv(gym.Env):
 
         goal_angle = self.observation_state[1]
 
-        laserscan_closest = self.observation_state[3]
+        laserscan_closest = self.observation_state[2]
 
         step_count = self.step_count
         stagnant_count = self.stagnant_count
 
-        collision_threshold = self.laserscan_mincap + 0.01
+        collision_threshold = self.laserscan_mincap + 0.02
 
-        reward_goal = 15 + (20 / self.max_step_count) * (self.max_step_count - step_count)
-        reward_distance_from_goal = -0.5 if (
-            goal_distance_normalised > 1.0
-        ) else (
-            2 * (1 - goal_distance_normalised) + ((1 - goal_distance_normalised) ** 2)
-        )
-        reward_facing_goal = 0.5 if (
-            (abs(goal_angle) < math.pi/4) and (laserscan_closest > collision_threshold + 0.02)
-        ) else 0
+        reward_goal = 10 + (20 / self.max_step_count) * (self.max_step_count - step_count)
 
         if abs(goal_distance - goal_distance_previous) < 0.002 and goal_distance >= self.goal_radius:
             stagnant_count += 1
@@ -321,31 +308,32 @@ class SacEnv(gym.Env):
         self.stagnant_count = stagnant_count
         self.goal_distance_previous = goal_distance
 
+        penalty_distance_from_goal = -2.5 * goal_distance_normalised
+        penalty_not_facing_goal = 0 if (
+            (abs(goal_angle) < math.pi/4) and (laserscan_closest > collision_threshold + 0.02)
+        ) else -0.2
         penalty_obstacle_proximity = 0 if (
             laserscan_closest > 0.3
         ) else (
-            -10 * (((self.laserscan_maxcap - laserscan_closest) / (self.laserscan_maxcap - self.laserscan_mincap)) ** 30)
+            min(-5 * (((self.laserscan_maxcap - laserscan_closest) / (self.laserscan_maxcap - self.laserscan_mincap)) ** 30), 0)
         )
         penalty_collision = -10
         penalty_step_count = -(1 / self.max_step_count) * (step_count - 1)
-        penalty_step_count_maxed = -15
+        penalty_step_count_maxed = -10
 
         if self.step_count >= self.max_step_count:
-           reward = penalty_step_count_maxed
+           reward = penalty_distance_from_goal + penalty_step_count_maxed
            self.end_episode()
         else:
             if self.goal_distance_record > goal_distance_normalised:
                 self.goal_distance_record = goal_distance_normalised
 
             if laserscan_closest < collision_threshold:
-                reward = penalty_collision + penalty_obstacle_proximity + penalty_step_count
+                reward = penalty_distance_from_goal + penalty_collision + penalty_obstacle_proximity + penalty_step_count + penalty_not_facing_goal
                 self.end_episode()
                 print(f"!!!!!ROBOT COLLISION!!!!! scan: {laserscan_closest}")
             else:
-                reward = reward_distance_from_goal
-                reward += penalty_obstacle_proximity + penalty_step_count
-
-                reward += reward_facing_goal
+                reward = penalty_distance_from_goal + penalty_obstacle_proximity + penalty_step_count + penalty_not_facing_goal
 
                 if goal_distance < self.goal_radius:
                     reward += reward_goal
@@ -419,10 +407,10 @@ class SacEnv(gym.Env):
 
         if stage == 1:
             init_positions = np.array(random.choice([
-                [[1, 1], [-1, -1]],
-                [[-1, -1], [1, 1]],
-                [[1, -1], [-1, 1]],
-                [[-1, 1], [1, -1]]
+                [[1, 1], [-1.25, -1.25]],
+                [[-1, -1], [1.25, 1.25]],
+                [[1, -1], [-1.25, 1.25]],
+                [[-1, 1], [1.25, -1.25]]
             ]))
 
         if stage == 2:
@@ -435,10 +423,10 @@ class SacEnv(gym.Env):
 
         if stage == 3:
             init_positions = np.array(random.choice([
-                [[0, 0], [-1.25, -1.25]],
-                [[0, 0], [1.25, 1.25]],
-                [[0, 0], [-1.25, 1.25]],
-                [[0, 0], [1.25, -1.25]]
+                [[1, 1], [-1.25, -1.25]],
+                [[-1, -1], [1.25, 1.25]],
+                [[1, -1], [-1.25, 1.25]],
+                [[-1, 1], [1.25, -1.25]]
             ]))
 
         if stage == 4:
@@ -447,6 +435,14 @@ class SacEnv(gym.Env):
                 #[[1.5, -2], [-2, 2]],
                 [[-2, 1.5], [2, -2]],
                 [[-1.5, 2], [2, -2]]
+            ]))
+
+        if stage == 5: # Turtlebot_world
+            init_positions = np.array(random.choice([
+                [[-2, -0.75], [2, 0.75]],
+                [[2, -0.75], [-2, 0.75]],
+                [[0.75, 2], [-0.75, -2]],
+                [[-0.75, 2], [0.75, -2]]
             ]))
 
         return init_positions
@@ -465,14 +461,14 @@ class SacEnv(gym.Env):
 
 def main(args=None):
     epochs = 1000
-    timesteps = 50000
+    timesteps = 25000
 
     for i in range(epochs):
         rospy.init_node('sac_env', anonymous=True)
 
         # Depends on map
         amr_model = 'turtlebot3_burger'
-        model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/sac_model.pth"
+        model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/sac_model_v1.1.pth"
 
         env = SacEnv(amr_model=amr_model, epoch=(i + 1))
         #env.reset()
