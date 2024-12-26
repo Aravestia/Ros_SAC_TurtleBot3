@@ -25,8 +25,9 @@ import numpy as np
 import pandas as pd
 import random
 import time
+import copy
 
-from sdf_files import goal_sdf
+from sdf_files import goal_sdf, waypoint_sdf
 
 class SacAStarEnv(gym.Env):
     def __init__(self, amr_model='turtlebot3_burger', epoch=0):
@@ -44,7 +45,7 @@ class SacAStarEnv(gym.Env):
 
         self.angle_cap = 2 * math.pi
 
-        self.stage = 5
+        self.stage = 2
         self.init_positions = np.array([[0.0, 0.0], [1.0, 1.0]])
         self.init_positions_previous = self.init_positions
         self.spawn_position = self.init_positions[0]
@@ -64,7 +65,7 @@ class SacAStarEnv(gym.Env):
         self.truncated = False
         self.total_timesteps = 0
         self.step_count = 0
-        self.max_step_count = 1000
+        self.max_step_count = 4000
         self.stagnant_count = 0
         self.max_stagnant_count = 10
         self.reset_count = 0
@@ -80,15 +81,23 @@ class SacAStarEnv(gym.Env):
 
         self.grid_row = 384
         self.grid_col = 384
-        self.grid = self.img_to_grid(r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_turtlebot_world.pgm", 1)
-        self.grid_out = self.grid
+        self.grid = self.img_to_grid(self.init_map(self.stage), 5)
+        self.grid_in = copy.deepcopy(self.grid)
+        self.grid_x_offset = 200
+        self.grid_y_offset = 184
+        self.grid_resolution = 0.05
+        self.grid_spawn = []
+        self.grid_goal = []
         self.waypoints = []
-
-        print(self.grid)
+        self.waypoint_radius = 0.15
+        self.waypoint_occurrence = 2
+        self.current_waypoint = 0
+        self.current_waypoint_position = []
 
         print(f"{self.goal_df}. {self.goal_count}")
 
         self.goal_sdf = goal_sdf(self.goal_radius)
+        self.waypoint_sdf = waypoint_sdf(self.waypoint_radius)
 
         rospy.wait_for_service('/gazebo/set_model_state')
         rospy.wait_for_service('/gazebo/spawn_sdf_model')
@@ -102,9 +111,12 @@ class SacAStarEnv(gym.Env):
 
         ### Set Specific properties for world ###
         self.model_names = self.get_world_properties().model_names
-        for i in range(1,10001):
+        '''for i in range(1,10001):
             if (f'goal_marker_{str(i)}') in self.model_names:
-                self.delete_model(f'goal_marker_{str(i)}')
+                self.delete_model(f'goal_marker_{str(i)}')'''
+        for model in self.model_names:
+            if model.startswith("goal_marker_"):
+                self.delete_model(model)
         #########################################
 
         self.laserscan_subscriber = rospy.Subscriber('/scan', LaserScan, self.laserscan_callback)
@@ -186,11 +198,20 @@ class SacAStarEnv(gym.Env):
         goal_distance = np.linalg.norm(goal_distance_vector)
         goal_distance_normalised = goal_distance / self.goal_distance_from_spawn # Normalised to 1
 
+        waypoint_position = self.current_waypoint_position
+        waypoint_distance = np.linalg.norm(waypoint_position - current_position)
+
         yaw = self.yaw
         goal_angle = self.normalise_radians_angle(
             math.atan2(
                 goal_position[1] - current_position[1], 
                 goal_position[0] - current_position[0]
+            ) - yaw
+        )
+        waypoint_angle = self.normalise_radians_angle(
+            math.atan2(
+                waypoint_position[1] - current_position[1], 
+                waypoint_position[0] - current_position[0]
             ) - yaw
         )
 
@@ -200,8 +221,8 @@ class SacAStarEnv(gym.Env):
         return np.nan_to_num(
             np.append(
                 np.array([
-                    goal_distance_normalised,
-                    goal_angle,
+                    waypoint_distance,
+                    waypoint_angle,
                     laserscan_closest,
                 ]),
                 laserscan
@@ -225,18 +246,22 @@ class SacAStarEnv(gym.Env):
         grid = cv2.imread(filename, cv2.IMREAD_GRAYSCALE)
         grid = np.where(grid < 250, 0, 1)
 
-        grid = binary_dilation(
+        grid = 1 - binary_dilation(
             grid == 0,
             structure=np.ones((2 * margin + 1, 2 * margin + 1), dtype=bool)
         ).astype(int)
 
-        return np.array(1 - grid)
-    
-    def a_star_get_waypoints(self, grid_out):
-        waypoints = np.where(grid_out == 2)
-        waypoints = list(zip((184 - waypoints[0]) * 0.05, (waypoints[1] - 200) * 0.05))
+        return grid
 
-        return waypoints
+    def create_waypoints(self, waypoints, occurrence):
+        w = []
+        c = 0
+        for waypoint in waypoints:
+            if c != 0 and (c == (len(waypoints) - 1) or c % occurrence == 0):
+                w.append(waypoint)
+            c += 1
+        
+        return np.array(w)
 
     def a_star_search(self, grid, src, dest):
         def is_valid(row, col):
@@ -273,8 +298,11 @@ class SacAStarEnv(gym.Env):
             # Print the path
             for i in path:
                 print("->", i, end=" ")
-                self.grid_out[i[0]][i[1]] = 2
-            print()
+                self.waypoints.append([
+                    (i[1] - self.grid_x_offset) * self.grid_resolution,
+                    (self.grid_y_offset - i[0]) * self.grid_resolution
+                ])
+            #print()
 
         # Check if the source and destination are valid
         if not is_valid(src[0], src[1]) or not is_valid(dest[0], dest[1]):
@@ -362,14 +390,11 @@ class SacAStarEnv(gym.Env):
         if not found_dest:
             print("Failed to find the destination cell")
 
-        self.waypoints = self.a_star_get_waypoints(self.grid_out)
-
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
 
         self.reset_count += 1
         self.publish_velocity(0)
-        self.grid_out = self.grid
 
         while (self.init_positions == self.init_positions_previous).all():
             self.init_positions = self.init_stage_positions(self.stage)
@@ -388,6 +413,21 @@ class SacAStarEnv(gym.Env):
             self.goal_position[1] - self.spawn_position[1], 
             self.goal_position[0] - self.spawn_position[0]
         )
+
+        self.waypoints = []
+        self.grid_in = copy.deepcopy(self.grid)
+        self.grid_spawn = np.array([
+            self.grid_y_offset - (self.spawn_position[1] / 0.05),
+            (self.spawn_position[0] / 0.05) + self.grid_x_offset
+        ]).astype(int)
+        self.grid_goal = np.array([
+            self.grid_y_offset - (self.goal_position[1] / 0.05),
+            (self.goal_position[0] / 0.05) + self.grid_x_offset
+        ]).astype(int)
+        self.a_star_search(self.grid_in, self.grid_spawn, self.grid_goal)
+        self.waypoints = np.round(self.create_waypoints(copy.deepcopy(self.waypoints), self.waypoint_occurrence), decimals=2)
+        self.current_waypoint = 0
+        self.current_waypoint_position = self.waypoints[self.current_waypoint]
 
         self.reset_turtlebot3_gazebo()
         self.reset_goal()
@@ -423,14 +463,14 @@ class SacAStarEnv(gym.Env):
             goal_distance = self.observation_state[0] * self.goal_distance_from_spawn
         )
 
-        rospy.sleep(0.08)
+        rospy.sleep(0.02)
 
         reward = self._compute_reward()
 
         print("------------------------------------------")
         print("OBSERVATION SPACE")
-        print(f"goal_distance_normalised: {self.observation_state[0]}")
-        print(f"goal_angle: {self.observation_state[1]}")
+        print(f"waypoint_distance: {self.observation_state[0]}")
+        print(f"waypoint_angle: {self.observation_state[1]}")
         print(f"laserscan_closest: {self.observation_state[2]}")
         print(f"laserscan_front: {self.observation_state[3]}")
         print(f"laserscan_left: {self.observation_state[6]}")
@@ -445,7 +485,10 @@ class SacAStarEnv(gym.Env):
         print(f"total_timesteps: {self.total_timesteps}")
         print(f"step_count: {self.step_count}/{self.max_step_count}")
         print(f"reward: {reward}")
-        print(f"record: {self.goal_distance_record}")
+        print(f"current position: {np.round(self.position, 2)}")
+        print(f"current waypoint position: {self.current_waypoint_position}")
+        print(f"current waypoint: {self.current_waypoint}")
+        print(f"total waypoints: {len(self.waypoints)}")
         print(f"goal count: {self.goal_count}")
         print("------------------------------------------")
         print(" ")
@@ -453,40 +496,27 @@ class SacAStarEnv(gym.Env):
         return self.observation_state, reward, self.done, self.truncated, {}
 
     def _compute_reward(self):
-        self.a_star_search(self.grid, ((self.spawn_position[::-1] + 10)/ 0.05).astype(int), ((self.goal_position[::-1] + 10)/ 0.05).astype(int))
-        print(f"{((self.spawn_position + 10) / 0.05).astype(int)}, {((self.goal_position + 10) / 0.05).astype(int)}")
-        print(self.waypoints)
+        waypoints = self.waypoints
+        current_waypoint = self.current_waypoint
+        current_waypoint_position = self.current_waypoint_position
 
-        goal_distance_normalised = self.observation_state[0]
-        goal_distance = goal_distance_normalised * self.goal_distance_from_spawn
-        goal_distance_previous = self.goal_distance_previous
+        #print(f"{self.grid_spawn}, {self.grid_goal}")
+        #print(waypoints)
+
+        waypoint_distance = self.observation_state[0]
 
         goal_angle = self.observation_state[1]
-
         laserscan_closest = self.observation_state[2]
-
         step_count = self.step_count
-        stagnant_count = self.stagnant_count
+        collision_threshold = self.laserscan_mincap + 0.01
 
-        collision_threshold = self.laserscan_mincap + 0.02
+        reward_goal = 50 + (10 * (self.max_step_count - step_count) / self.max_step_count)
+        reward_waypoint = 7.5
 
-        reward_goal = 30 + (20 / self.max_step_count) * (self.max_step_count - step_count)
-
-        if abs(goal_distance - goal_distance_previous) < 0.002 and goal_distance >= self.goal_radius:
-            stagnant_count += 1
-            print("!!!ROBOT STAGNANT!!!")
-        else:
-            stagnant_count = 0
-
-        self.stagnant_count = stagnant_count
-        self.goal_distance_previous = goal_distance
-
-        penalty_distance_from_goal = -1 * goal_distance_normalised
-        penalty_not_facing_goal = 0 if (
-            (abs(goal_angle) < math.pi/4) and (laserscan_closest > collision_threshold + 0.02)
-        ) else -0.2
+        penalty_distance_from_waypoint = -(waypoint_distance - self.waypoint_radius)
+        penalty_not_facing_waypoint = 0 if (abs(goal_angle) < math.pi/4) else -0.2
         penalty_obstacle_proximity = 0 if (
-            laserscan_closest > 0.3
+            laserscan_closest > 0.25
         ) else (
             min(-5 * (((self.laserscan_maxcap - laserscan_closest) / (self.laserscan_maxcap - self.laserscan_mincap)) ** 20), 0)
         )
@@ -495,33 +525,37 @@ class SacAStarEnv(gym.Env):
         penalty_step_count_maxed = -50
 
         if self.step_count >= self.max_step_count:
-           reward = penalty_distance_from_goal + penalty_step_count_maxed
+           reward = penalty_distance_from_waypoint + penalty_step_count_maxed
            self.end_episode()
         else:
-            if self.goal_distance_record > goal_distance_normalised:
-                self.goal_distance_record = goal_distance_normalised
-
             if laserscan_closest < collision_threshold:
-                reward = penalty_distance_from_goal + penalty_collision + penalty_obstacle_proximity + penalty_step_count + penalty_not_facing_goal
+                reward = penalty_distance_from_waypoint + penalty_collision + penalty_obstacle_proximity + penalty_step_count + penalty_not_facing_waypoint
                 self.end_episode()
                 print(f"!!!!!ROBOT COLLISION!!!!! scan: {laserscan_closest}")
             else:
-                reward = penalty_distance_from_goal + penalty_obstacle_proximity + penalty_step_count + penalty_not_facing_goal
+                reward = penalty_distance_from_waypoint + penalty_obstacle_proximity + penalty_step_count + penalty_not_facing_waypoint
 
-                if goal_distance < self.goal_radius:
-                    reward += reward_goal
+                if waypoint_distance < self.waypoint_radius:
+                    if current_waypoint == (len(waypoints) - 1):
+                        reward += reward_goal
 
-                    self.goal_count += 1
-                    self.end_episode()
-                    print(f"!!!!!ROBOT GOAL REACHED!!!!!")
+                        self.goal_count += 1
+                        self.end_episode()
+                        print(f"!!!!!ROBOT GOAL REACHED!!!!!")
 
-                    self.goal_df.loc[self.goal_count] = {
-                        'id': self.goal_count, 
-                        'steps': self.step_count, 
-                        'stage': self.stage,
-                        'time': datetime.now().strftime("%d/%m/%Y"),
-                    }
-                    self.goal_df.to_csv(self.goal_database)
+                        self.goal_df.loc[self.goal_count] = {
+                            'id': self.goal_count, 
+                            'steps': self.step_count, 
+                            'stage': self.stage,
+                            'time': datetime.now().strftime("%d/%m/%Y"),
+                        }
+                        self.goal_df.to_csv(self.goal_database)
+                    else:
+                        reward += reward_waypoint
+                        current_waypoint += 1
+
+                        self.current_waypoint = current_waypoint
+                        self.current_waypoint_position = waypoints[current_waypoint]
 
         return float(reward)
     
@@ -543,12 +577,12 @@ class SacAStarEnv(gym.Env):
         model_state_msg.pose.orientation.w = 1.0
         model_state_msg.reference_frame = 'world'
 
-        world_properties = self.get_world_properties()
+        model_names = self.get_world_properties().model_names
 
-        if world_properties and (model_name + str(self.reset_count - 1)) in world_properties.model_names:
-            self.delete_model(model_name + str(self.reset_count - 1))
+        for model in model_names:
+            if model.startswith(model_name):
+                self.delete_model(model)
 
-        rospy.sleep(0.1)
         self.spawn_model(model_state_msg.model_name, self.goal_sdf, "", model_state_msg.pose, "world")
         print(f"Goal set. {self.goal_position}")
 
@@ -575,6 +609,17 @@ class SacAStarEnv(gym.Env):
 
         self.set_model_state(model_state_msg)
         print(f"Turtlebot set. {self.spawn_position}")
+
+    def init_map(self, stage):
+        map = ""
+
+        if stage == 2:
+            map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_stage2.pgm"
+
+        if stage == 5:
+            map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_turtlebot_world.pgm"
+
+        return map
         
     def init_stage_positions(self, stage):
         init_positions = np.array([[], []])
@@ -635,7 +680,7 @@ class SacAStarEnv(gym.Env):
 
 def main(args=None):
     epochs = 1000
-    timesteps = 5000
+    timesteps = 10000
 
     for i in range(epochs):
         rospy.init_node('sac_env', anonymous=True)

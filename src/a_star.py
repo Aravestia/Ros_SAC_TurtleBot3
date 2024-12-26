@@ -188,9 +188,9 @@ def dilate_obstacles(grid, margin):
     """
     # Create a structure for dilation (e.g., a square of given radius)
     structure = np.ones((2 * margin + 1, 2 * margin + 1), dtype=bool)
-    dilated_grid = binary_dilation(grid == 0, structure=structure).astype(int)
+    dilated_grid = 1 - binary_dilation(grid == 0, structure=structure).astype(int)
     # Return the updated grid (1 for free space, 0 for obstacles)
-    return 1 - dilated_grid
+    return dilated_grid
 
 def main():
     global grid_out
@@ -207,15 +207,15 @@ def main():
         [1, 1, 1, 0, 0, 0, 1, 0, 0, 1]
     ])
 
-    grid2 = parse_pgm("/home/aravestia/isim/noetic/src/robot_planner/src/map/map_turtlebot_world.pgm")
-    grid2 = dilate_obstacles(grid2, 1)
+    grid2 = parse_pgm("/home/aravestia/isim/noetic/src/robot_planner/src/map/map_stage2.pgm")
+    grid2 = dilate_obstacles(grid2, 5)
     print(grid2.shape)
 
     grid_out = np.where(grid2 == 0, 0, 255)
 
     # Define the source and destination
-    src = [185, 240]
-    dest = [215, 160]
+    src = [208, 224]
+    dest = [184, 200]
 
     # Run the A* search algorithm
     a_star_search(grid2, src, dest)
