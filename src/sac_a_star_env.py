@@ -45,7 +45,7 @@ class SacAStarEnv(gym.Env):
 
         self.angle_cap = 2 * math.pi
 
-        self.stage = 2
+        self.stage = 5
         self.init_positions = np.array([[0.0, 0.0], [1.0, 1.0]])
         self.init_positions_previous = self.init_positions
         self.spawn_position = self.init_positions[0]
@@ -89,7 +89,7 @@ class SacAStarEnv(gym.Env):
         self.grid_spawn = []
         self.grid_goal = []
         self.waypoints = []
-        self.waypoint_radius = 0.15
+        self.waypoint_radius = 0.12
         self.waypoint_occurrence = 2
         self.current_waypoint = 0
         self.current_waypoint_position = []
@@ -277,7 +277,6 @@ class SacAStarEnv(gym.Env):
             return ((row - dest[0]) ** 2 + (col - dest[1]) ** 2) ** 0.5
         
         def trace_path(cell_details, dest):
-            print("The Path is ")
             path = []
             row = dest[0]
             col = dest[1]
@@ -297,12 +296,10 @@ class SacAStarEnv(gym.Env):
 
             # Print the path
             for i in path:
-                print("->", i, end=" ")
                 self.waypoints.append([
                     (i[1] - self.grid_x_offset) * self.grid_resolution,
                     (self.grid_y_offset - i[0]) * self.grid_resolution
                 ])
-            #print()
 
         # Check if the source and destination are valid
         if not is_valid(src[0], src[1]) or not is_valid(dest[0], dest[1]):
@@ -687,7 +684,7 @@ def main(args=None):
 
         # Depends on map
         amr_model = 'turtlebot3_burger'
-        model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/sac_a_star_model_v1.0.pth"
+        model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/sac_a_star_model_v1.1.pth"
 
         env = SacAStarEnv(amr_model=amr_model, epoch=(i + 1))
         #env.reset()
