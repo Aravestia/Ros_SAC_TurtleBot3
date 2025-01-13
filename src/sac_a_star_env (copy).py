@@ -41,7 +41,6 @@ class SacAStarEnv(gym.Env):
 
         self.laserscan_maxcap = 3.5
         self.laserscan_mincap = 0.12
-        self.laserscan_warning_threshold = 0.24
         self.laserscan_closest = self.laserscan_maxcap
         self.laserscan = np.full(12, self.laserscan_maxcap)
 
@@ -76,17 +75,8 @@ class SacAStarEnv(gym.Env):
         self.amr_model = amr_model
         self.epoch = epoch
 
-        self.goal_file_path = r"/home/aravestia/isim/noetic/src/robot_planner/src/goal.csv"
-
-        with open(self.goal_file_path, 'r') as file:
-            reader = csv.reader(file)
-            header = next(reader)
-
-        with open(self.goal_file_path, 'w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(header)
-
-        self.goal_df = pd.read_csv(self.goal_file_path, header=0, index_col=0)
+        self.goal_database = r"/home/aravestia/isim/noetic/src/robot_planner/src/goal.csv"
+        self.goal_df = pd.read_csv(self.goal_database, header=0, index_col=0)
         self.goal_count = len(self.goal_df)
         self.goal_radius = 0.2
 
@@ -124,6 +114,9 @@ class SacAStarEnv(gym.Env):
 
         ### Set Specific properties for world ###
         self.model_names = self.get_world_properties().model_names
+        '''for i in range(1,10001):
+            if (f'goal_marker_{str(i)}') in self.model_names:
+                self.delete_model(f'goal_marker_{str(i)}')'''
         for model in self.model_names:
             if model.startswith("goal_marker_"):
                 self.delete_model(model)
@@ -190,9 +183,9 @@ class SacAStarEnv(gym.Env):
 
         self.yaw = euler[2]
 
-    def publish_velocity(self, angular_velocity, laserscan_closest=3.5, goal_distance=1):
+    def publish_velocity(self, angular_velocity, laserscan_closest=1, goal_distance=1):
         self.velocity = self.velocity_multiplier if (
-            laserscan_closest > self.laserscan_warning_threshold
+            goal_distance > self.goal_radius + 0.15
         ) else (0.5 * self.velocity_multiplier)
 
         twist = Twist()
@@ -264,16 +257,14 @@ class SacAStarEnv(gym.Env):
         return grid
 
     def create_waypoints(self, waypoints, occurrence):
-        w = {}
+        w = []
         c = 0
-        d = 0
         for waypoint in waypoints:
             if c != 0 and (c == (len(waypoints) - 1) or c % occurrence == 0):
-                w[d] = np.round(waypoint, decimals=2)
-                d += 1
+                w.append(waypoint)
             c += 1
         
-        return w
+        return np.array(w)
 
     def a_star_search(self, grid, src, dest):
         def is_valid(row, col):
@@ -434,7 +425,7 @@ class SacAStarEnv(gym.Env):
             (self.goal_position[0] / 0.05) + self.grid_x_offset
         ]).astype(int)
         self.a_star_search(self.grid_in, self.grid_spawn, self.grid_goal)
-        self.waypoints = self.create_waypoints(self.waypoints, self.waypoint_occurrence)
+        self.waypoints = np.round(self.create_waypoints(copy.deepcopy(self.waypoints), self.waypoint_occurrence), decimals=2)
         self.current_waypoint = 0
         self.current_waypoint_position = self.waypoints[self.current_waypoint]
 
@@ -468,7 +459,7 @@ class SacAStarEnv(gym.Env):
         self.angular_velocity = float(action[0] * self.angular_velocity_multiplier)
         self.publish_velocity(
             angular_velocity = self.angular_velocity,
-            laserscan_closest = self.observation_state[2],
+            laserscan_closest = self.observation_state[3], 
             goal_distance = self.observation_state[0] * self.goal_distance_from_spawn
         )
 
@@ -506,26 +497,26 @@ class SacAStarEnv(gym.Env):
 
     def _compute_reward(self):
         waypoints = self.waypoints
-        closest_waypoint = self.current_waypoint
+        current_waypoint = self.current_waypoint
         waypoint_distance = self.observation_state[0]
 
         goal_angle = self.observation_state[1]
         laserscan_closest = self.observation_state[2]
         step_count = self.step_count
         collision_threshold = self.laserscan_mincap + 0.01
-        warning_threshold = self.laserscan_warning_threshold
+        warning_threshold = 0.28
 
         waypoint_radius = self.waypoint_radius
 
         reward_goal = 50 + (10 * (self.max_step_count - step_count) / self.max_step_count)
         reward_waypoint = 4
 
-        penalty_distance_from_waypoint = -min(waypoint_distance - self.waypoint_radius, 2)
+        penalty_distance_from_waypoint = -(waypoint_distance - self.waypoint_radius)
         penalty_not_facing_waypoint = 0 if (abs(goal_angle) < math.pi/4) else -0.2
         penalty_obstacle_proximity = 0 if (
-            laserscan_closest >= warning_threshold
+            laserscan_closest > warning_threshold
         ) else (
-            -22 * ((warning_threshold - laserscan_closest) / (warning_threshold - collision_threshold)) - 3
+            min(-5 * ((warning_threshold - laserscan_closest) / (warning_threshold - collision_threshold)), -3)
         )
         penalty_collision = -50
         penalty_step_count = -(1 / self.max_step_count) * (step_count - 1)
@@ -540,40 +531,29 @@ class SacAStarEnv(gym.Env):
                 self.end_episode()
                 print(f"!!!!!ROBOT COLLISION!!!!! scan: {laserscan_closest}")
             else:
-                waypoint_min_distance = 1000
-                for i in range(self.current_waypoint, len(waypoints)):
-                    distance = np.linalg.norm(self.position - waypoints[i])
-                    if distance < waypoint_min_distance:
-                        waypoint_min_distance = distance
-                        closest_waypoint = i
+                reward = penalty_distance_from_waypoint + penalty_obstacle_proximity + penalty_step_count + penalty_not_facing_waypoint
 
-                self.current_waypoint = closest_waypoint
-                self.current_waypoint_position = waypoints[closest_waypoint]
+                if waypoint_distance < waypoint_radius:
+                    if current_waypoint == (len(waypoints) - 1):
+                        reward += reward_goal
 
-                if laserscan_closest < warning_threshold:
-                    reward = penalty_obstacle_proximity + penalty_step_count
-                else:
-                    reward = penalty_distance_from_waypoint + penalty_obstacle_proximity + penalty_step_count + penalty_not_facing_waypoint
+                        self.goal_count += 1
+                        self.end_episode()
+                        print(f"!!!!!ROBOT GOAL REACHED!!!!!")
 
-                    if waypoint_distance < waypoint_radius:
-                        if closest_waypoint == (len(waypoints) - 1):
-                            reward += reward_goal
+                        self.goal_df.loc[self.goal_count] = {
+                            'id': self.goal_count, 
+                            'steps': self.step_count, 
+                            'stage': self.stage,
+                            'time': datetime.now().strftime("%d/%m/%Y"),
+                        }
+                        self.goal_df.to_csv(self.goal_database)
+                    else:
+                        reward += reward_waypoint
+                        current_waypoint += 1
 
-                            self.goal_count += 1
-                            self.end_episode()
-                            print(f"!!!!!ROBOT GOAL REACHED!!!!!")
-
-                            self.goal_df.loc[self.goal_count] = {
-                                'id': self.goal_count, 
-                                'steps': self.step_count, 
-                                'stage': self.stage,
-                                'time': datetime.now().strftime("%d/%m/%Y"),
-                            }
-                            self.goal_df.to_csv(self.goal_file_path)
-                        else:
-                            reward += reward_waypoint
-                            self.current_waypoint = closest_waypoint + 1
-                            self.current_waypoint_position = waypoints[self.current_waypoint]
+                        self.current_waypoint = current_waypoint
+                        self.current_waypoint_position = waypoints[current_waypoint]
 
         return float(reward)
     
