@@ -19,10 +19,10 @@ class SpinObstacle3():
         self.base_x = 0.5
         self.base_y = 0.5
 
-        self.spawn_obstacle(self.base_x, self.base_y, "obstacle_1", self.radius)
-        self.spawn_obstacle(self.base_x, -self.base_y, "obstacle_2", self.radius)
+        #self.spawn_obstacle(self.base_x, self.base_y, "obstacle_1", self.radius)
+        #self.spawn_obstacle(self.base_x, -self.base_y, "obstacle_2", self.radius)
         self.spawn_obstacle(-self.base_x, self.base_y, "obstacle_3", self.radius)
-        self.spawn_obstacle(-self.base_x, -self.base_y, "obstacle_4", self.radius)
+        #self.spawn_obstacle(-self.base_x, -self.base_y, "obstacle_4", self.radius)
     
     def spawn_obstacle(self, x, y, name, radius):
         model_state_msg = ModelState()

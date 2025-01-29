@@ -30,26 +30,24 @@ import csv
 
 from sdf_files import goal_sdf, waypoint_sdf
 
-class SacAStarEnv(gym.Env):
-    def __init__(self, amr_model='turtlebot3_burger', epoch=0):
-        super(SacAStarEnv, self).__init__()
+class SacEnvV2(gym.Env):
+    def __init__(self, amr_model='turtlebot3_burger', epoch=0, init_positions=[], stage_map="", yaw=0.0):
+        super(SacEnvV2, self).__init__()
 
-        self.velocity_multiplier = 0.13
+        self.velocity_multiplier = 0.15
         self.angular_velocity_multiplier = 2.84
         self.velocity = self.velocity_multiplier
         self.angular_velocity = 0.0
 
         self.laserscan_maxcap = 3.5
         self.laserscan_mincap = 0.12
-        self.laserscan_warning_threshold = 0.24
+        self.laserscan_warning_threshold = 0.3
         self.laserscan_closest = self.laserscan_maxcap
         self.laserscan = np.full(12, self.laserscan_maxcap)
 
         self.angle_cap = 2 * math.pi
 
-        self.stage = 5
-        self.init_positions = np.array([[0.0, 0.0], [1.0, 1.0]])
-        self.init_positions_previous = self.init_positions
+        self.init_positions = init_positions
         self.spawn_position = self.init_positions[0]
         self.position = self.spawn_position
         self.goal_position = self.init_positions[1]
@@ -92,7 +90,7 @@ class SacAStarEnv(gym.Env):
 
         self.grid_row = 384
         self.grid_col = 384
-        self.grid = self.img_to_grid(self.init_map(self.stage), 5)
+        self.grid = self.img_to_grid(stage_map, 5)
         self.grid_in = copy.deepcopy(self.grid)
         self.grid_x_offset = 200
         self.grid_y_offset = 184
@@ -405,11 +403,7 @@ class SacAStarEnv(gym.Env):
         self.reset_count += 1
         self.publish_velocity(0)
 
-        while (self.init_positions == self.init_positions_previous).all():
-            self.init_positions = self.init_stage_positions(self.stage)
-
         self.spawn_position = self.init_positions[0]
-        self.init_positions_previous = self.init_positions
 
         self.position = self.spawn_position
         self.goal_position = self.init_positions[1]
@@ -438,7 +432,7 @@ class SacAStarEnv(gym.Env):
         self.current_waypoint = 0
         self.current_waypoint_position = self.waypoints[self.current_waypoint]
 
-        self.reset_turtlebot3_gazebo()
+        #self.reset_turtlebot3_gazebo()
         self.reset_goal()
 
         self.done = False
@@ -605,7 +599,7 @@ class SacAStarEnv(gym.Env):
         print(f"Goal set. {self.goal_position}")
 
     def reset_turtlebot3_gazebo(self):
-        yaw = math.pi * random.uniform(-1, 1)
+        yaw = self.yaw
         quaternion = tf.transformations.quaternion_from_euler(0.0, 0.0, yaw)
 
         model_state_msg = ModelState()
@@ -627,62 +621,6 @@ class SacAStarEnv(gym.Env):
 
         self.set_model_state(model_state_msg)
         print(f"Turtlebot set. {self.spawn_position}")
-
-    def init_map(self, stage):
-        map = ""
-
-        if stage == 2:
-            map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_stage2.pgm"
-
-        if stage == 5:
-            map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_turtlebot_world.pgm"
-
-        return map
-        
-    def init_stage_positions(self, stage):
-        init_positions = np.array([[], []])
-
-        if stage == 1:
-            init_positions = np.array(random.choice([
-                [[1, 1], [-1.25, -1.25]],
-                [[-1, -1], [1.25, 1.25]],
-                [[1, -1], [-1.25, 1.25]],
-                [[-1, 1], [1.25, -1.25]]
-            ]))
-
-        if stage == 2:
-            init_positions = np.array(random.choice([
-                [[1.25, 1.25], [0, 0]],
-                [[-1.25, -1.25], [0, 0]],
-                [[1.25, -1.25], [0, 0]],
-                [[-1.25, 1.25], [0, 0]]
-            ]))
-
-        if stage == 3:
-            init_positions = np.array(random.choice([
-                [[1, 1], [-1.25, -1.25]],
-                [[-1, -1], [1.25, 1.25]],
-                [[1, -1], [-1.25, 1.25]],
-                [[-1, 1], [1.25, -1.25]]
-            ]))
-
-        if stage == 4:
-            init_positions = np.array(random.choice([
-                #[[2, -1.5], [-2, 2]],
-                #[[1.5, -2], [-2, 2]],
-                [[-2, 1.5], [2, -2]],
-                [[-1.5, 2], [2, -2]]
-            ]))
-
-        if stage == 5: # Turtlebot_world
-            init_positions = np.array(random.choice([
-                [[-2, -0.75], [2, 0.75]],
-                [[2, -0.75], [-2, 0.75]],
-                [[0.75, 2], [-0.75, -2]],
-                [[-0.75, 2], [0.75, -2]]
-            ]))
-
-        return init_positions
     
     def degree_to_radians(self, angle):
         angle = angle * (math.pi / 180)
@@ -696,18 +634,68 @@ class SacAStarEnv(gym.Env):
 
         return angle
 
+#==========================================================================================================================================
+#==========================================================================================================================================
+#==========================================================================================================================================
+#==========================================================================================================================================
+#==========================================================================================================================================
+#==========================================================================================================================================
+#==========================================================================================================================================
+#==========================================================================================================================================
+#==========================================================================================================================================
+#==========================================================================================================================================
+
+def init_stage_positions(stage):
+    init_positions = [] # [spawn, goal]
+
+    if stage == 1:
+        init_positions = [[1, 1], [-1.25, -1.25]]
+
+    if stage == 2:
+        init_positions = [[1.25, 1.25], [0, 0]]   
+
+    if stage == 3:
+        init_positions = [[1, 1], [-1.25, -1.25]]
+
+    if stage == 4: # Room
+        init_positions = [[-1.5, 2], [2, -2]]
+        
+    if stage == 5: # Turtlebot_world
+        init_positions = [[-2, -0.75], [2, 0.75]]
+
+    return np.array(init_positions)
+
+def init_map(stage):
+    map = ""
+
+    if stage == 2:
+        map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_stage2.pgm"
+
+    if stage == 5: # Turtlebot_world
+        map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_turtlebot_world.pgm"
+
+    return map
+
 def main(args=None):
     epochs = 1000
     timesteps = 10000
 
     for i in range(epochs):
-        rospy.init_node('sac_env', anonymous=True)
+        rospy.init_node('sac_env_v2', anonymous=True)
 
         # Depends on map
         amr_model = 'turtlebot3_burger'
-        model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/sac_a_star_model_v1.2.pth"
+        model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/sac_model_v2.1-demo.pth"
+        stage = 5
+        stage_positions = init_stage_positions(stage)
+        stage_map = init_map(stage)
 
-        env = SacAStarEnv(amr_model=amr_model, epoch=(i + 1))
+        env = SacEnvV2(
+            amr_model=amr_model,
+            epoch=(i + 1),
+            init_positions=stage_positions,
+            stage_map=stage_map
+        )
         #env.reset()
 
         check_env(env)
