@@ -4,7 +4,7 @@ import rospy
 from gazebo_msgs.srv import SetModelState, GetWorldProperties, SpawnModel
 from gazebo_msgs.msg import ModelState
 
-class SpinObstacle4():
+class SpinObstacle3():
     def __init__(self):
         rospy.wait_for_service('/gazebo/set_model_state')
         rospy.wait_for_service('/gazebo/get_world_properties')
@@ -14,77 +14,15 @@ class SpinObstacle4():
         self.spawn_model = rospy.ServiceProxy('/gazebo/spawn_sdf_model', SpawnModel)
         self.get_world_properties = rospy.ServiceProxy('/gazebo/get_world_properties', GetWorldProperties)
 
-        #model_names = self.get_world_properties().model_names
-
-        self.radius = 0.12
+        self.radius = 0.10
 
         self.base_x = 0.5
         self.base_y = 0.5
 
-        self.x1 = self.base_x
-        self.y1 = self.base_y
-
-        self.x2 = -self.base_x
-        self.y2 = -self.base_y
-
-        self.spawn_obstacle(self.x1, self.y1, "obstacle_1", self.radius)
-        self.spawn_obstacle(self.x2, self.y2, "obstacle_2", self.radius)
-
-        while not rospy.is_shutdown():
-            msg = ModelState()
-            msg.model_name = "obstacle_1"
-            msg.pose.position.x = self.x1
-            msg.pose.position.y = self.y1
-            msg.reference_frame = 'world'
-
-            msg_2 = ModelState()
-            msg_2.model_name = "obstacle_2"
-            msg_2.pose.position.x = self.x2
-            msg_2.pose.position.y = self.y2
-            msg_2.reference_frame = 'world'
-            
-            self.set_model_state(msg)
-            self.set_model_state(msg_2)    
-
-            speed = 0.001
-
-            self.x1, self.y1 = self.set_pos(self.x1, self.y1, speed)
-            self.x2, self.y2 = self.set_pos(self.x2, self.y2, speed)
-
-    def set_pos(self, x, y, speed):
-        if x >= self.base_x:
-            x = self.base_x
-
-            if y > -self.base_y:
-                y -= speed
-            else:
-                y = -self.base_y
-
-        if y <= -self.base_y:
-            y = -self.base_y
-
-            if x > -self.base_x:
-                x -= speed
-            else:
-                x = -self.base_x
-
-        if x <= -self.base_x:
-            x = -self.base_x
-
-            if y < self.base_y:
-                y += speed
-            else:
-                y = self.base_y
-
-        if y >= self.base_y:
-            y = self.base_y
-
-            if x < self.base_x:
-                x += speed
-            else:
-                x = self.base_x
-
-        return x, y
+        #self.spawn_obstacle(self.base_x, self.base_y, "obstacle_1", self.radius)
+        #self.spawn_obstacle(self.base_x, -self.base_y, "obstacle_2", self.radius)
+        self.spawn_obstacle(0, 0.75, "obstacle_3", self.radius)
+        self.spawn_obstacle(-0.375, -0.25, "obstacle_4", self.radius)
     
     def spawn_obstacle(self, x, y, name, radius):
         model_state_msg = ModelState()
@@ -142,6 +80,6 @@ class SpinObstacle4():
         '''
 
 if __name__ == '__main__':
-    rospy.init_node('spin_obstacle_4', anonymous=True)
-    s = SpinObstacle4()
+    rospy.init_node('spin_obstacle_3', anonymous=True)
+    s = SpinObstacle3()
     #rospy.spin()

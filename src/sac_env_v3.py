@@ -40,7 +40,7 @@ class SacEnvV3(gym.Env):
 
         self.laserscan_maxcap = 3.5
         self.laserscan_mincap = 0.12
-        self.laserscan_warning_threshold = 0.25
+        self.laserscan_warning_threshold = 0.3
         self.laserscan_warning_threshold_normalised = self.normalise_value(self.laserscan_warning_threshold, self.laserscan_maxcap, self.laserscan_mincap)
         self.laserscan_closest = 1.0
         self.laserscan_closest_angle = 0.0
@@ -61,6 +61,8 @@ class SacEnvV3(gym.Env):
             self.goal_position[1] - self.spawn_position[1], 
             self.goal_position[0] - self.spawn_position[0]
         )
+        self.current_center = self.spawn_position
+        self.current_distance_from_waypoint = 0.0
 
         self.spawn_orientation = np.array([0.0, 1.0]) # [z, w]
         self.yaw = yaw
@@ -70,7 +72,7 @@ class SacEnvV3(gym.Env):
         self.total_timesteps = 0
         self.max_timesteps = max_timesteps
         self.step_count = 0
-        self.max_step_count = 2000
+        self.max_step_count = 2000 if not test_mode else 10000
         self.stagnant_count = 0
         self.max_stagnant_count = 10
         self.reset_count = 0
@@ -96,7 +98,7 @@ class SacEnvV3(gym.Env):
         self.grid_spawn = point_to_grid(self.grid_x_offset, self.grid_y_offset, self.spawn_position[0], self.spawn_position[1])
         self.grid_goal = point_to_grid(self.grid_x_offset, self.grid_y_offset, self.goal_position[0], self.goal_position[1])
 
-        self.waypoint_occurrence = 1
+        self.waypoint_occurrence = 3
         self.waypoints = a_star_search(
             self.grid_in,
             self.grid_spawn, 
@@ -109,20 +111,16 @@ class SacEnvV3(gym.Env):
             self.waypoint_occurrence
         )
         self.waypoint_closest = 0
-        self.waypoint_closest_best = 0
         self.waypoint_min_distance = 0.5
-        self.waypoint_lookahead = 15
+        self.waypoint_min_distance_threshold = 0.15
+        self.waypoint_lookahead = 30
         self.waypoint_closest_angle = 3
 
         self.follower_mode = False
+        self.follower_mode_previous = False
         self.test_mode = test_mode
 
         self.moving_obstacle_radius = 0.15
-        self.explored_grid_size = 5
-        self.explored_areas = np.array([np.floor(self.explored_grid_size * self.spawn_position)])
-        self.exploration_max = 40
-        self.explored_grid_cap = self.exploration_max
-        self.unexplored = 1.0
 
         print(f"{self.goal_df}. {self.goal_count}")
 
@@ -158,10 +156,10 @@ class SacEnvV3(gym.Env):
         )
 
         self.observation_state_titles = [
-            'unexplored_area',
+            'distance_from_waypoint',
             'velocity_normalised',
             'angular_velocity_normalised', 
-            'laserscan_closest',
+            'waypoint_closest_angle',
             'laserscan_closest_angle', 
             'laserscan_NW', 
             'laserscan_W',
@@ -222,7 +220,7 @@ class SacEnvV3(gym.Env):
         self.waypoint_closest, self.waypoint_min_distance = _get_closest_waypoint(
             current_position, 
             self.waypoints, 
-            self.waypoint_closest_best, 
+            self.waypoint_closest, 
             self.waypoint_lookahead, 
             len(self.waypoints)
         )
@@ -238,28 +236,24 @@ class SacEnvV3(gym.Env):
                 self.waypoints[self.waypoint_closest][0] - current_position[0]
             ) - self.yaw
         )
+        waypoint_closest_angle = self.waypoint_closest_angle
 
-        discrete_position = np.floor(self.explored_grid_size * current_position)
+        self.follower_mode = laserscan_closest > self.laserscan_warning_threshold_normalised and self.test_mode
 
-        self.unexplored = 1.0
-        for x in self.explored_areas[-min(self.explored_grid_cap, len(self.explored_areas)):]:
-            if np.array_equal(x, discrete_position):
-                self.unexplored = -1.0
-                break
+        if self.follower_mode_previous != self.follower_mode and self.test_mode:
+            self.current_center = current_position
+        
+        self.follower_mode_previous = self.follower_mode
 
-        if laserscan_closest <= self.laserscan_warning_threshold_normalised:
-            self.unexplored = -1.0
-
-        if self.unexplored == 1.0:
-            self.explored_areas = np.append(self.explored_areas, [discrete_position], axis=0)
+        waypoint_min_distance_normalised = (2 / (1 + np.exp(-2 * self.waypoint_min_distance))) - 1
 
         return np.nan_to_num(
             np.append(
                 np.array([
-                    self.unexplored,
+                    waypoint_min_distance_normalised,
                     velocity,
                     angular_velocity,
-                    laserscan_closest,
+                    waypoint_closest_angle,
                     laserscan_closest_angle,
                 ]),
                 laserscan
@@ -290,6 +284,8 @@ class SacEnvV3(gym.Env):
             self.goal_position[1] - self.spawn_position[1], 
             self.goal_position[0] - self.spawn_position[0]
         )
+        self.current_center = self.spawn_position
+        self.current_distance_from_waypoint = 0.0
 
         self.grid_in = copy.deepcopy(self.grid)
         self.grid_spawn = point_to_grid(self.grid_x_offset, self.grid_y_offset, self.spawn_position[0], self.spawn_position[1])
@@ -307,10 +303,6 @@ class SacEnvV3(gym.Env):
             self.waypoint_occurrence
         )
         self.waypoint_closest = 0
-        self.waypoint_closest_best = 0
-
-        self.explored_areas = np.array([np.floor(self.explored_grid_size * self.spawn_position)])
-        self.unexplored = 1.0
 
         self.reset_turtlebot3_gazebo()
         self.reset_goal()
@@ -339,23 +331,16 @@ class SacEnvV3(gym.Env):
         
         self.observation_state = self._get_observation_state()
 
-        self.follower_mode = (
-            self.observation_state[len(self.observation_state) - 1] > self.laserscan_warning_threshold_normalised
-        ) and (
-            self.observation_state[len(self.observation_state) - 8] > self.laserscan_warning_threshold_normalised
-        ) and (self.test_mode)
+        if self.waypoint_min_distance < self.waypoint_min_distance_threshold:
+            self.waypoint_closest += 1
 
         if not self.follower_mode:
             self.velocity = float(action[0])
             self.angular_velocity = float(action[1])
         else:
             min_velocity = 0.0
-            turning_rate = 0.5 / self.angular_velocity_multiplier
+            turning_rate = 1.0 / self.angular_velocity_multiplier
             angle_threshold = 0.15
-            distance_threshold = 0.15
-
-            if self.waypoint_min_distance < distance_threshold:
-                self.waypoint_closest_best += 1
 
             if self.waypoint_closest_angle < -angle_threshold:
                 self.angular_velocity = -turning_rate
@@ -380,11 +365,6 @@ class SacEnvV3(gym.Env):
         print("OBSERVATION SPACE")
         for i in range(self.observation_state_titles_len):
             print(f"{self.observation_state_titles[i]}: {self.observation_state[i]}")
-        print(f"waypoint_closest_angle: {self.waypoint_closest_angle}")
-        print(" ")
-        print("ACTION SPACE")
-        print(f"velocity : {self.velocity}")
-        print(f"angular_velocity : {self.angular_velocity}")
         print(" ")
         print(f"epoch: {self.epoch}")
         print(f"total_timesteps: {self.total_timesteps}")
@@ -394,7 +374,6 @@ class SacEnvV3(gym.Env):
         print(f"closest waypoint: {self.waypoint_closest}")
         print(f"total waypoints: {len(self.waypoints)}")
         print(f"completion count: {self.completion_count}")
-        print(f"areas explored: {len(self.explored_areas)}/{self.exploration_max}")
         print(f"follower mode: {self.follower_mode}")
         print("------------------------------------------")
         print(" ")
@@ -402,99 +381,105 @@ class SacEnvV3(gym.Env):
         return self.observation_state, reward, self.done, self.truncated, {}
 
     def _compute_reward(self):
-        unexplored = self.observation_state[0]
+        distance_from_waypoint = self.observation_state[0]
         velocity = self.observation_state[1]
         angular_velocity = self.observation_state[2]
-        laserscan_closest = self.observation_state[3]
+        waypoint_closest_angle = self.observation_state[3]
         laserscan_closest_angle = self.observation_state[4]
 
         laserscan_quadrant_index = 5
-        laserscan_quadrants = [self.observation_state[i + laserscan_quadrant_index] for i in range(8)]
+        laserscan_quadrants = np.array([self.observation_state[i + laserscan_quadrant_index] for i in range(8)])
+        laserscan_closest = np.min(laserscan_quadrants)
+        laserscan_closest_index = np.argmin(laserscan_quadrants)
+        print(laserscan_closest_index)
 
         step_count = self.step_count
         collision_threshold = self.normalise_value(self.laserscan_mincap + 0.01, self.laserscan_maxcap, self.laserscan_mincap)
         warning_threshold = self.laserscan_warning_threshold_normalised
+        velocity_threshold = -0.9
+        waypoint_distance_threshold = 0.25
+        laserscan_angle_threshold = 0.4
 
-        #penalty_goal_distance = -(goal_distance + 1) * 0.5
-        penalty_obstacle_proximity = 0 if laserscan_closest > warning_threshold else -2.0
+        penalty_collision = -1.0
+        penalty_step_count_maxed = -1.0
+        penalty_step_count = -step_count / self.max_step_count
+        penalty_distance_from_waypoint = 0 if (
+            distance_from_waypoint < waypoint_distance_threshold
+        ) else (
+            -(distance_from_waypoint - waypoint_distance_threshold) / (1 - waypoint_distance_threshold)
+        )
+        penalty_obstacle_proximity = 0 if (
+            laserscan_closest > warning_threshold
+        ) else -(warning_threshold - laserscan_closest) / (warning_threshold - collision_threshold)
         penalty_facing_obstacle = 0
+        reward_velocity = 0.5 * (1 + velocity)
+        penalty_rapid_acceleration = -0.5 * abs(self.velocity_previous - velocity)
+        penalty_rapid_turning = -0.5 * abs(self.angular_velocity_previous - angular_velocity)
+        penalty_high_turning = -abs(angular_velocity)
 
-        if laserscan_quadrants[0] == laserscan_closest or laserscan_quadrants[7] == laserscan_closest:
-            penalty_facing_obstacle += -5.0
+        reward_goal = 1.0
+        reward_facing_waypoint = 1.0 - abs(waypoint_closest_angle)
+        reward_waypoint = 1.0 if (
+            distance_from_waypoint < waypoint_distance_threshold
+        ) else 0
+        reward_turning_away = 0
 
-        if laserscan_quadrants[1] == laserscan_closest or laserscan_quadrants[6] == laserscan_closest:
-            penalty_facing_obstacle += -0.5
-
-        penalty_collision = -50
-        penalty_step_count = -(step_count / self.max_step_count)
-        penalty_step_count_maxed = -50
-        penalty_velocity = 0
-
-        if laserscan_closest > warning_threshold:
-            penalty_velocity = (velocity - 1) * 0.5
-        else:
-            velocity_threshold = -0.7
-
+        if laserscan_closest <= warning_threshold and abs(laserscan_closest_angle) < laserscan_angle_threshold:
             if velocity > velocity_threshold:
-                penalty_velocity = -5 * (velocity - velocity_threshold) / (1 - velocity_threshold)
+                reward_velocity =  (1 - velocity) / (1 - velocity_threshold)
             else:
-                penalty_velocity = 2.5 * (velocity - velocity_threshold) / (1 - velocity_threshold)
+                reward_velocity = (1 + velocity) / (1 + velocity_threshold)
 
-        penalty_rapid_acceleration = -abs(self.velocity_previous - velocity) * 0.25
-        penalty_rapid_turning = -abs(self.angular_velocity_previous - angular_velocity) * 0.25
-        penalty_high_turning = -abs(angular_velocity) * 0.5
+            penalty_facing_obstacle = -(laserscan_angle_threshold - abs(laserscan_closest_angle)) / laserscan_angle_threshold
+            reward_waypoint = 0
+            penalty_high_turning = 0
 
         self.velocity_previous = velocity
         self.angular_velocity_previous = angular_velocity
 
-        reward_goal = 50
-        reward_exploration_max = 50
-        reward_exploration = (unexplored + 1) * 2.0
         reward = 0.0
 
-        if self.waypoint_closest > self.waypoint_closest_best:
-            self.waypoint_closest_best = self.waypoint_closest
-
-        if self.step_count >= self.max_step_count: # Maxed Step Count
-           reward += penalty_step_count_maxed
-           self.end_episode()
-        else:
-            if laserscan_closest <= collision_threshold: # Collision
-                reward += penalty_collision
-                self.end_episode()
-                print(f"!!!!!ROBOT COLLISION!!!!! scan: {laserscan_closest}")
-            else:
-                reward += reward_exploration
-                reward += penalty_velocity 
-                reward += penalty_rapid_acceleration 
-                reward += penalty_rapid_turning
-                #reward += penalty_high_turning
-                reward += penalty_step_count
-
-                if laserscan_closest < warning_threshold: # Too close to wall
-                    reward += penalty_obstacle_proximity
-                    reward += penalty_facing_obstacle
-                else:   
-                    if len(self.explored_areas) >= self.exploration_max: # Explored Enough
-                        reward += reward_exploration_max
-                        self.completion_count += 1
-
-                        self.end_episode()
-                        print(f"!!!!!ROBOT GOAL REACHED!!!!!")
-        
         if self.total_timesteps > self.max_timesteps - 5:
             self.goal_df.to_csv(self.goal_file_path)
+        
+        if self.waypoint_closest >= len(self.waypoints) - 1: # Reached Goal
+            reward += 10.0 * reward_goal
+            self.completion_count += 1
+            self.end_episode()
+            print(f"!!!!!ROBOT GOAL REACHED!!!!!")
+            return float(reward)
+
+        reward += 1.0 * reward_waypoint
+        reward += 2.0 * penalty_distance_from_waypoint
+        reward += 2.0 * reward_velocity 
+        reward += 0.5 * penalty_rapid_acceleration 
+        reward += 0.5 * penalty_rapid_turning
+        reward += 2.0 * penalty_high_turning
+        reward += 4.0 * penalty_facing_obstacle
+        reward += 4.0 * penalty_obstacle_proximity
+        reward += 0.25 * penalty_step_count
+
+        if self.step_count >= self.max_step_count: # Maxed Step Count
+           reward += 10.0 * penalty_step_count_maxed
+           self.end_episode()
+           return float(reward)
+
+        if laserscan_closest <= collision_threshold: # Collision
+            reward += 10.0 * penalty_collision
+            self.end_episode()
+            print(f"!!!!!ROBOT COLLISION!!!!! scan: {laserscan_closest}")
+            return float(reward)
 
         return float(reward)
     
-    def end_episode(self):
+    def end_episode(self, distance_from_waypoint=0.0):
         self.goal_count += 1
 
-        self.goal_df.loc[self.goal_count] = {
+        '''self.goal_df.loc[self.goal_count] = {
             'id': self.goal_count, 
-            'score': len(self.explored_areas) / self.exploration_max, 
+            'score': self.waypoint_closest / len(waypoints), 
             'time': datetime.now().strftime("%d/%m/%Y, %H:%M:%S"),
-        }
+        }'''
 
         self.goal_distance_record = 1.0
         self.done = True
@@ -588,7 +573,9 @@ def init_stage_positions(stage):
         init_positions = [[-1.5, 2], [2, -2]]
         
     if stage == 5: # Turtlebot_world
-        init_positions = [[-2, -0.75], [2, 0.75]]
+        #init_positions = np.array([[[-0.6, 0.75], [0.6, 0.75]], [[-0.5, -0.75], [-0.5, 0.75]]])
+        init_positions = np.array([[[-0.5, 0.75], [-0.5, -1]], [[-0.5, -0.75], [-0.5, 0.75]]])
+        init_positions = init_positions[np.random.choice(init_positions.shape[0])]
 
     return np.array(init_positions)
 
@@ -605,7 +592,7 @@ def init_map(stage):
 
 def main(args=None):
     epochs = 1000
-    timesteps = 10000
+    timesteps = 5000
 
     for i in range(epochs):
         rospy.init_node('sac_env_v3', anonymous=True)

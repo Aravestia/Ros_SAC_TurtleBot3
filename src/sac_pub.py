@@ -1,33 +1,16 @@
 #!/usr/bin/env python3
 
 import rospy
-from sensor_msgs.msg import LaserScan
-from sensor_msgs.msg import Imu
-from nav_msgs.msg import Odometry
-from geometry_msgs.msg import Twist
-from gazebo_msgs.srv import SetModelState, SpawnModel, DeleteModel, GetWorldProperties
-from gazebo_msgs.msg import ModelState
 
 import gymnasium as gym
 from gymnasium import spaces
 from stable_baselines3 import SAC
 from stable_baselines3.common.env_checker import check_env
 
-import math
-import tf
-from datetime import datetime
-import os
 import numpy as np
 import pandas as pd
-import random
-import time
-import copy
-import csv
 
-from sdf_files import goal_sdf, waypoint_sdf
-from a_star import a_star_search, img_to_grid, _get_closest_waypoint, point_to_grid
 from sac_env_v3 import SacEnvV3
-from sac_env_v2 import SacEnvV2
 
 def init_stage_positions(stage):
     init_positions = [] # [spawn, goal]
@@ -45,7 +28,7 @@ def init_stage_positions(stage):
         init_positions = [[-1.5, 2], [2, -2]]
         
     if stage == 5: # Turtlebot_world
-        init_positions = [[-2, -0.75], [2, 0.75]]
+        init_positions = [[-0.5, 0.75], [-0.5, -1]]
 
     return np.array(init_positions)
 
