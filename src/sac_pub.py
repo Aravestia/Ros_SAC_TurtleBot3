@@ -2,79 +2,77 @@
 
 import rospy
 
-import gymnasium as gym
-from gymnasium import spaces
 from stable_baselines3 import SAC
-from stable_baselines3.common.env_checker import check_env
+#from stable_baselines3.common.env_checker import check_env
 
-import numpy as np
-import pandas as pd
+import time
+import os
 
 from sac_env_v3 import SacEnvV3
-
-def init_stage_positions(stage):
-    init_positions = [] # [spawn, goal]
-
-    if stage == 1:
-        init_positions = [[1, 1], [-1.25, -1.25]]
-
-    if stage == 2:
-        init_positions = [[1.25, 1.25], [0, 0]]   
-
-    if stage == 3:
-        init_positions = [[1, 1], [-1.25, -1.25]]
-
-    if stage == 4: # Room
-        init_positions = [[-1.5, 2], [2, -2]]
-        
-    if stage == 5: # Turtlebot_world
-        init_positions = [[-0.5, 0.75], [-0.5, -1]]
-
-    return np.array(init_positions)
-
-def init_map(stage):
-    map = ""
-
-    if stage == 2:
-        map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_stage2.pgm"
-
-    if stage == 5: # Turtlebot_world
-        map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_turtlebot_world.pgm"
-
-    return map
+import init_stage
 
 def main(args=None):
+    epochs = 10000
+    timesteps = 4000
+
     rospy.init_node('sac_pub', anonymous=True)
 
-    # Depends on map
+    test_mode = False
+
     amr_model = 'turtlebot3_burger'
-    model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/sac_model_v3.0.pth"
-    stage = 5
-    stage_positions = init_stage_positions(stage)
-    stage_map = init_map(stage)
+    model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/sac_model_v3.2.pth"
 
-    env = SacEnvV3(
-    amr_model=amr_model,
-    epoch=1,
-    init_positions=stage_positions,
-    stage_map=stage_map,
-    test_mode=True
-    )
+    stage = 'turtlebot_world_test' if test_mode else 'turtlebot_world_train'
+    stage_positions = init_stage.init_stage_positions(stage)
+    stage_map = init_stage.init_map(stage)
 
-    model = SAC.load(path=model_pth, env=env)
-    
-    while not rospy.is_shutdown():
-        obs, info = env.reset()
-        done = False
+    if test_mode:
+        env = SacEnvV3(
+            amr_model=amr_model,
+            epoch=1,
+            init_positions=stage_positions,
+            stage_map=stage_map,
+            test_mode=test_mode
+        )
 
-        while not done:
-            if done:
-                print("Stopping...")
-                obs, info = env.reset()
-                break
+        model = SAC.load(path=model_pth, env=env)
+        
+        while not rospy.is_shutdown():
+            obs, info = env.reset()
+            done = False
 
-            action, _states = model.predict(obs)
-            obs, rewards, done, _, info = env.step(action)
+            while not done:
+                if done:
+                    print("Stopping...")
+                    obs, info = env.reset()
+                    break
+
+                action, _states = model.predict(obs)
+                obs, rewards, done, _, info = env.step(action)
+    else:
+        for i in range(epochs):
+            stage_positions = init_stage.init_stage_positions(stage, i)
+
+            env = SacEnvV3(
+                amr_model=amr_model,
+                epoch=(i + 1),
+                init_positions=stage_positions,
+                stage_map=stage_map,
+                max_timesteps=timesteps,
+                test_mode=test_mode
+            )
+
+            #check_env(env)
+
+            print(f"model path exists: {os.path.exists(model_pth)}")
+            model = SAC.load(path=model_pth, env=env) if os.path.exists(model_pth) else SAC('MlpPolicy', env, ent_coef='auto', verbose=1)
+            model.learn(total_timesteps=timesteps)
+            model.save(model_pth)
+
+            print(f"model saved! Epoch: {i + 1}")
+
+            env.reset()
+            time.sleep(3)
 
 if __name__ == '__main__':
     main()

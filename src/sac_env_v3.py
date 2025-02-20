@@ -5,8 +5,6 @@ from sensor_msgs.msg import LaserScan
 from sensor_msgs.msg import Imu
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
-from gazebo_msgs.srv import SetModelState, SpawnModel, DeleteModel, GetWorldProperties
-from gazebo_msgs.msg import ModelState
 
 import gymnasium as gym
 from gymnasium import spaces
@@ -23,9 +21,11 @@ import random
 import time
 import copy
 import csv
+import asyncio
 
-from sdf_files import goal_sdf, waypoint_sdf
-from a_star import a_star_search, img_to_grid, _get_closest_waypoint, point_to_grid
+import a_star
+import create_sdf
+import reset_state
 
 class SacEnvV3(gym.Env):
     def __init__(self, amr_model='turtlebot3_burger', epoch=0, init_positions=[], stage_map="", yaw=0.0, max_timesteps=10000, test_mode=False):
@@ -56,7 +56,6 @@ class SacEnvV3(gym.Env):
         self.goal_distance_from_spawn_vector = self.goal_position - self.spawn_position
         self.goal_distance_from_spawn = np.linalg.norm(self.goal_distance_from_spawn_vector)
         self.goal_distance_previous = self.goal_distance_from_spawn
-        self.goal_distance_record = 1.0
         self.goal_angle_from_spawn = math.atan2(
             self.goal_position[1] - self.spawn_position[1], 
             self.goal_position[0] - self.spawn_position[0]
@@ -72,7 +71,7 @@ class SacEnvV3(gym.Env):
         self.total_timesteps = 0
         self.max_timesteps = max_timesteps
         self.step_count = 0
-        self.max_step_count = 2000 if not test_mode else 10000
+        self.max_step_count = 1000 if not test_mode else 10000
         self.stagnant_count = 0
         self.max_stagnant_count = 10
         self.reset_count = 0
@@ -90,16 +89,16 @@ class SacEnvV3(gym.Env):
         self.grid_row = 384
         self.grid_col = 384
         self.grid_margin = 5
-        self.grid = img_to_grid(stage_map, self.grid_margin)
+        self.grid = a_star.img_to_grid(stage_map, self.grid_margin)
         self.grid_in = copy.deepcopy(self.grid)
         self.grid_x_offset = 200
         self.grid_y_offset = 184
         self.grid_resolution = 0.05
-        self.grid_spawn = point_to_grid(self.grid_x_offset, self.grid_y_offset, self.spawn_position[0], self.spawn_position[1])
-        self.grid_goal = point_to_grid(self.grid_x_offset, self.grid_y_offset, self.goal_position[0], self.goal_position[1])
+        self.grid_spawn = a_star.point_to_grid(self.grid_x_offset, self.grid_y_offset, self.spawn_position[0], self.spawn_position[1])
+        self.grid_goal = a_star.point_to_grid(self.grid_x_offset, self.grid_y_offset, self.goal_position[0], self.goal_position[1])
 
         self.waypoint_occurrence = 3
-        self.waypoints = a_star_search(
+        self.waypoints = a_star.a_star_search(
             self.grid_in,
             self.grid_spawn, 
             self.grid_goal, 
@@ -121,27 +120,15 @@ class SacEnvV3(gym.Env):
         self.test_mode = test_mode
 
         self.moving_obstacle_radius = 0.15
-
-        print(f"{self.goal_df}. {self.goal_count}")
-
-        self.goal_sdf = goal_sdf(self.goal_radius)
+        self.goal_sdf = create_sdf.goal_sdf(self.goal_radius)
 
         rospy.wait_for_service('/gazebo/set_model_state')
         rospy.wait_for_service('/gazebo/spawn_sdf_model')
         rospy.wait_for_service('/gazebo/get_world_properties')
         rospy.wait_for_service('/gazebo/delete_model')
 
-        self.set_model_state = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
-        self.spawn_model = rospy.ServiceProxy('/gazebo/spawn_sdf_model', SpawnModel)
-        self.delete_model = rospy.ServiceProxy('/gazebo/delete_model', DeleteModel)
-        self.get_world_properties = rospy.ServiceProxy('/gazebo/get_world_properties', GetWorldProperties)
-
-        ### Set Specific properties for world ###
-        self.model_names = self.get_world_properties().model_names
-        for model in self.model_names:
-            if model.startswith("goal_marker_"):
-                self.delete_model(model)
-        #########################################
+        reset_state.reset_turtlebot3_gazebo(self.spawn_position, self.amr_model)
+        reset_state.reset_goal(self.goal_position, self.goal_sdf)
 
         self.laserscan_subscriber = rospy.Subscriber('/scan', LaserScan, self.laserscan_callback)
         self.odometry_subscriber = rospy.Subscriber('/odom', Odometry, self.odometry_callback)
@@ -217,13 +204,17 @@ class SacEnvV3(gym.Env):
         goal_distance = self.normalise_value(np.linalg.norm(goal_distance_vector), self.goal_distance_from_spawn)
         goal_distance_normalised = (2 / (1 + np.exp(-3 * goal_distance))) - 1
 
-        self.waypoint_closest, self.waypoint_min_distance = _get_closest_waypoint(
+        self.waypoint_closest, self.waypoint_min_distance = a_star._get_closest_waypoint(
             current_position, 
             self.waypoints, 
             self.waypoint_closest, 
             self.waypoint_lookahead, 
             len(self.waypoints)
         )
+
+        if self.waypoint_closest >= len(self.waypoints) and len(self.waypoints) > 1:
+            self.waypoint_closest = len(self.waypoints) - 1
+
         angular_velocity = self.angular_velocity
         velocity = self.velocity
         laserscan_closest = self.laserscan_closest
@@ -279,7 +270,6 @@ class SacEnvV3(gym.Env):
         self.goal_distance_from_spawn_vector = self.goal_position - self.spawn_position
         self.goal_distance_from_spawn = np.linalg.norm(self.goal_distance_from_spawn_vector)
         self.goal_distance_previous = self.goal_distance_from_spawn
-        self.goal_distance_record = 1.0
         self.goal_angle_from_spawn = math.atan2(
             self.goal_position[1] - self.spawn_position[1], 
             self.goal_position[0] - self.spawn_position[0]
@@ -288,10 +278,10 @@ class SacEnvV3(gym.Env):
         self.current_distance_from_waypoint = 0.0
 
         self.grid_in = copy.deepcopy(self.grid)
-        self.grid_spawn = point_to_grid(self.grid_x_offset, self.grid_y_offset, self.spawn_position[0], self.spawn_position[1])
-        self.grid_goal = point_to_grid(self.grid_x_offset, self.grid_y_offset, self.goal_position[0], self.goal_position[1])
+        self.grid_spawn = a_star.point_to_grid(self.grid_x_offset, self.grid_y_offset, self.spawn_position[0], self.spawn_position[1])
+        self.grid_goal = a_star.point_to_grid(self.grid_x_offset, self.grid_y_offset, self.goal_position[0], self.goal_position[1])
 
-        self.waypoints = a_star_search(
+        self.waypoints = a_star.a_star_search(
             self.grid_in,
             self.grid_spawn, 
             self.grid_goal, 
@@ -304,8 +294,7 @@ class SacEnvV3(gym.Env):
         )
         self.waypoint_closest = 0
 
-        self.reset_turtlebot3_gazebo()
-        self.reset_goal()
+        reset_state.reset_turtlebot3_gazebo(self.spawn_position, self.amr_model)
 
         self.done = False
         self.truncated = False
@@ -449,9 +438,9 @@ class SacEnvV3(gym.Env):
             print(f"!!!!!ROBOT GOAL REACHED!!!!!")
             return float(reward)
 
-        reward += 1.0 * reward_waypoint
+        reward += 2.0 * reward_waypoint
         reward += 2.0 * penalty_distance_from_waypoint
-        reward += 2.0 * reward_velocity 
+        reward += 1.0 * reward_velocity 
         reward += 0.5 * penalty_rapid_acceleration 
         reward += 0.5 * penalty_rapid_turning
         reward += 2.0 * penalty_high_turning
@@ -472,64 +461,9 @@ class SacEnvV3(gym.Env):
 
         return float(reward)
     
-    def end_episode(self, distance_from_waypoint=0.0):
+    def end_episode(self):
         self.goal_count += 1
-
-        '''self.goal_df.loc[self.goal_count] = {
-            'id': self.goal_count, 
-            'score': self.waypoint_closest / len(waypoints), 
-            'time': datetime.now().strftime("%d/%m/%Y, %H:%M:%S"),
-        }'''
-
-        self.goal_distance_record = 1.0
         self.done = True
-        
-    def reset_goal(self):
-        model_name = "goal_marker_"
-
-        model_state_msg = ModelState()
-        model_state_msg.model_name = model_name + str(self.reset_count)
-        model_state_msg.pose.position.x = self.goal_position[0]
-        model_state_msg.pose.position.y = self.goal_position[1]
-        model_state_msg.pose.position.z = 0.0
-        model_state_msg.pose.orientation.x = 0.0
-        model_state_msg.pose.orientation.y = 0.0
-        model_state_msg.pose.orientation.z = 0.0
-        model_state_msg.pose.orientation.w = 1.0
-        model_state_msg.reference_frame = 'world'
-
-        model_names = self.get_world_properties().model_names
-
-        for model in model_names:
-            if model.startswith(model_name):
-                self.delete_model(model)
-
-        self.spawn_model(model_state_msg.model_name, self.goal_sdf, "", model_state_msg.pose, "world")
-        print(f"Goal set. {self.goal_position}")
-
-    def reset_turtlebot3_gazebo(self):
-        yaw = 0.0
-        quaternion = tf.transformations.quaternion_from_euler(0.0, 0.0, yaw)
-
-        model_state_msg = ModelState()
-        model_state_msg.model_name = self.amr_model
-        model_state_msg.pose.position.x = self.spawn_position[0]
-        model_state_msg.pose.position.y = self.spawn_position[1]
-        model_state_msg.pose.position.z = 0.0
-        model_state_msg.pose.orientation.x = 0.0
-        model_state_msg.pose.orientation.y = 0.0
-        model_state_msg.pose.orientation.z = quaternion[2]
-        model_state_msg.pose.orientation.w = quaternion[3]
-        model_state_msg.twist.linear.x = 0.0
-        model_state_msg.twist.linear.y = 0.0
-        model_state_msg.twist.linear.z = 0.0
-        model_state_msg.twist.angular.x = 0.0
-        model_state_msg.twist.angular.y = 0.0
-        model_state_msg.twist.angular.z = 0.0
-        model_state_msg.reference_frame = 'world'
-
-        self.set_model_state(model_state_msg)
-        print(f"Turtlebot set. {self.spawn_position}")
     
     def degree_to_radians(self, angle):
         angle = angle * (math.pi / 180)
@@ -545,93 +479,3 @@ class SacEnvV3(gym.Env):
     
     def normalise_value(self, value, range_max, range_min=0):
         return (2 * ((value - range_min) / (range_max - range_min))) - 1
-
-#==========================================================================================================================================
-#==========================================================================================================================================
-#==========================================================================================================================================
-#==========================================================================================================================================
-#==========================================================================================================================================
-#==========================================================================================================================================
-#==========================================================================================================================================
-#==========================================================================================================================================
-#==========================================================================================================================================
-#==========================================================================================================================================
-
-def init_stage_positions(stage):
-    init_positions = [] # [spawn, goal]
-
-    if stage == 1:
-        init_positions = [[1, 1], [-1.25, -1.25]]
-
-    if stage == 2:
-        init_positions = [[1.25, 1.25], [0, 0]]   
-
-    if stage == 3:
-        init_positions = [[1, 1], [-1.25, -1.25]]
-
-    if stage == 4: # Room
-        init_positions = [[-1.5, 2], [2, -2]]
-        
-    if stage == 5: # Turtlebot_world
-        #init_positions = np.array([[[-0.6, 0.75], [0.6, 0.75]], [[-0.5, -0.75], [-0.5, 0.75]]])
-        init_positions = np.array([[[-0.5, 0.75], [-0.5, -1]], [[-0.5, -0.75], [-0.5, 0.75]]])
-        init_positions = init_positions[np.random.choice(init_positions.shape[0])]
-
-    return np.array(init_positions)
-
-def init_map(stage):
-    map = ""
-
-    if stage == 2:
-        map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_stage2.pgm"
-
-    if stage == 5: # Turtlebot_world
-        map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_turtlebot_world.pgm"
-
-    return map
-
-def main(args=None):
-    epochs = 1000
-    timesteps = 5000
-
-    for i in range(epochs):
-        rospy.init_node('sac_env_v3', anonymous=True)
-
-        # Depends on map
-        amr_model = 'turtlebot3_burger'
-        model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/sac_model_v3.0.pth"
-        stage = 5
-        stage_positions = init_stage_positions(stage)
-        stage_map = init_map(stage)
-
-        env = SacEnvV3(
-            amr_model=amr_model,
-            epoch=(i + 1),
-            init_positions=stage_positions,
-            stage_map=stage_map,
-            max_timesteps=timesteps,
-            test_mode=False
-        )
-        #env.reset()
-
-        check_env(env)
-
-        print(os.path.exists(model_pth))
-        model = SAC.load(path=model_pth, env=env) if os.path.exists(model_pth) else SAC('MlpPolicy', env, ent_coef='auto', verbose=1)
-        model.learn(total_timesteps=timesteps)
-        model.save(model_pth)
-
-        print(f"model saved! Epoch: {i + 1}")
-
-        env.reset()
-        time.sleep(5)
-
-    #obs = env.reset()
-    #done = False
-    #while not done:
-        #action, _states = model.predict(obs)
-        #obs, rewards, done, info = env.step(action)
-
-if __name__ == '__main__':
-    main()
-
