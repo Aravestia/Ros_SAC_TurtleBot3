@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import obstacle.obstacle_4
 import rospy
 
 from stable_baselines3 import SAC
@@ -10,6 +11,7 @@ import os
 
 from sac_env_v3 import SacEnvV3
 import init_stage
+import obstacle
 
 def main(args=None):
     epochs = 10000
@@ -25,6 +27,7 @@ def main(args=None):
     stage = 'turtlebot_world_test' if test_mode else 'turtlebot_world_train'
     stage_positions = init_stage.init_stage_positions(stage)
     stage_map = init_stage.init_map(stage)
+    stage_obstacle = obstacle.obstacle_4.Obstacle4()
 
     if test_mode:
         env = SacEnvV3(

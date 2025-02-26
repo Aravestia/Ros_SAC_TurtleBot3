@@ -7,7 +7,7 @@ from gazebo_msgs.msg import ModelState
 import tf
 import math
 
-class SpinObstacle1():
+class Obstacle1():
     def __init__(self, name, angular_velocity=1.0):
         rospy.wait_for_service('/gazebo/set_model_state')
         rospy.wait_for_service('/gazebo/get_world_properties')
@@ -42,6 +42,6 @@ class SpinObstacle1():
             print(f"yaw: {self.yaw}")
 
 if __name__ == '__main__':
-    rospy.init_node('spin_obstacle_1', anonymous=True)
-    s = SpinObstacle1(name="obstacle")
+    rospy.init_node('obstacle_1', anonymous=True)
+    s = Obstacle1(name="obstacle")
     #rospy.spin()

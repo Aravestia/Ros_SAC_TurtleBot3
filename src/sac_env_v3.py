@@ -135,6 +135,8 @@ class SacEnvV3(gym.Env):
         self.imu_subscriber = rospy.Subscriber('/imu', Imu, self.imu_callback)
         self.twist_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
 
+        self.publish_velocity(0.0, 0.0)
+
         # Action space: [velocity, angular velocity]
         self.action_space = spaces.Box(
             low=np.array([-1.0, -1.0]), 
@@ -266,6 +268,8 @@ class SacEnvV3(gym.Env):
         self.spawn_position = self.init_positions[0]
         self.position = self.spawn_position
         self.goal_position = self.init_positions[1]
+
+        reset_state.reset_turtlebot3_gazebo(self.spawn_position, self.amr_model)
             
         self.goal_distance_from_spawn_vector = self.goal_position - self.spawn_position
         self.goal_distance_from_spawn = np.linalg.norm(self.goal_distance_from_spawn_vector)
@@ -293,8 +297,6 @@ class SacEnvV3(gym.Env):
             self.waypoint_occurrence
         )
         self.waypoint_closest = 0
-
-        reset_state.reset_turtlebot3_gazebo(self.spawn_position, self.amr_model)
 
         self.done = False
         self.truncated = False
@@ -439,8 +441,8 @@ class SacEnvV3(gym.Env):
             return float(reward)
 
         reward += 2.0 * reward_waypoint
+        reward += 1.0 * reward_velocity
         reward += 2.0 * penalty_distance_from_waypoint
-        reward += 1.0 * reward_velocity 
         reward += 0.5 * penalty_rapid_acceleration 
         reward += 0.5 * penalty_rapid_turning
         reward += 2.0 * penalty_high_turning
