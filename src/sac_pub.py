@@ -10,6 +10,7 @@ import time
 import os
 
 from sac_env_v3 import SacEnvV3
+from sac_env_v4 import SacEnvV4
 import init_stage
 import obstacle
 
@@ -22,7 +23,7 @@ def main(args=None):
     test_mode = False
 
     amr_model = 'turtlebot3_burger'
-    model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/sac_model_v3.2.pth"
+    model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/sac_model_v4.0.pth"
 
     stage = 'turtlebot_world_test' if test_mode else 'turtlebot_world_train'
     stage_positions = init_stage.init_stage_positions(stage)
@@ -30,7 +31,7 @@ def main(args=None):
     stage_obstacle = obstacle.obstacle_4.Obstacle4()
 
     if test_mode:
-        env = SacEnvV3(
+        env = SacEnvV4(
             amr_model=amr_model,
             epoch=1,
             init_positions=stage_positions,
@@ -56,7 +57,7 @@ def main(args=None):
         for i in range(epochs):
             stage_positions = init_stage.init_stage_positions(stage, i)
 
-            env = SacEnvV3(
+            env = SacEnvV4(
                 amr_model=amr_model,
                 epoch=(i + 1),
                 init_positions=stage_positions,
