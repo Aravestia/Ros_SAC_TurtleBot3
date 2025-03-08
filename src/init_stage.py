@@ -23,6 +23,8 @@ def init_stage_positions(stage, epoch=0):
         init_positions = init_choices[epoch % len(init_choices)]
     elif stage == 'turtlebot_world_test':
         init_positions = [[-0.5, -1], [-0.5, 0.75]]
+    elif stage == 'local_minimum':
+        init_positions = [[-0.5, 0.5], [1.75, -1.75]]
     else:
         return None
 
@@ -37,6 +39,8 @@ def init_map(stage):
         map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_turtlebot_world.pgm"
     elif stage == 'turtlebot_world_test':
         map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_turtlebot_world.pgm"
+    elif stage == 'local_minimum':
+        map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_local_minimum.pgm"
     else:
         return None
 

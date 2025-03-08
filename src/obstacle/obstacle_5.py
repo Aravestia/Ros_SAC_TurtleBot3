@@ -14,15 +14,14 @@ class Obstacle():
         self.spawn_model = rospy.ServiceProxy('/gazebo/spawn_sdf_model', SpawnModel)
         self.get_world_properties = rospy.ServiceProxy('/gazebo/get_world_properties', GetWorldProperties)
 
-        self.radius = 0.10
+        self.radius = 0.1
 
         self.base_x = 0.5
         self.base_y = 0.5
 
         #self.spawn_obstacle(self.base_x, self.base_y, "obstacle_1", self.radius)
         #self.spawn_obstacle(self.base_x, -self.base_y, "obstacle_2", self.radius)
-        self.spawn_obstacle(0, 0.75, "obstacle_3", self.radius)
-        self.spawn_obstacle(-0.375, -0.25, "obstacle_4", self.radius)
+        self.spawn_obstacle(1.75, 1, "obstacle_1", self.radius)
     
     def spawn_obstacle(self, x, y, name, radius):
         model_state_msg = ModelState()
@@ -80,6 +79,6 @@ class Obstacle():
         '''
 
 if __name__ == '__main__':
-    rospy.init_node('obstacle_4', anonymous=True)
+    rospy.init_node('obstacle_5', anonymous=True)
     s = Obstacle()
     #rospy.spin()

@@ -4,7 +4,7 @@ import rospy
 from gazebo_msgs.srv import SetModelState, GetWorldProperties, SpawnModel
 from gazebo_msgs.msg import ModelState
 
-class Obstacle3():
+class Obstacle():
     def __init__(self):
         rospy.wait_for_service('/gazebo/set_model_state')
         rospy.wait_for_service('/gazebo/get_world_properties')
@@ -81,5 +81,5 @@ class Obstacle3():
 
 if __name__ == '__main__':
     rospy.init_node('obstacle_3', anonymous=True)
-    s = Obstacle3()
+    s = Obstacle()
     #rospy.spin()

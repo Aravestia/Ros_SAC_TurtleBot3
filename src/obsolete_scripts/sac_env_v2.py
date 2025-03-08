@@ -28,7 +28,7 @@ import time
 import copy
 import csv
 
-from sdf_files import goal_sdf, waypoint_sdf
+from create_sdf import goal_sdf
 
 class SacEnvV2(gym.Env):
     def __init__(self, amr_model='turtlebot3_burger', epoch=0, init_positions=[], stage_map="", yaw=0.0):
@@ -74,18 +74,6 @@ class SacEnvV2(gym.Env):
         self.amr_model = amr_model
         self.epoch = epoch
 
-        self.goal_file_path = r"/home/aravestia/isim/noetic/src/robot_planner/src/goal.csv"
-
-        with open(self.goal_file_path, 'r') as file:
-            reader = csv.reader(file)
-            header = next(reader)
-
-        with open(self.goal_file_path, 'w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(header)
-
-        self.goal_df = pd.read_csv(self.goal_file_path, header=0, index_col=0)
-        self.goal_count = len(self.goal_df)
         self.goal_radius = 0.2
 
         self.grid_row = 384
@@ -105,10 +93,7 @@ class SacEnvV2(gym.Env):
 
         self.moving_obstacle_radius = 0.15
 
-        print(f"{self.goal_df}. {self.goal_count}")
-
         self.goal_sdf = goal_sdf(self.goal_radius)
-        self.waypoint_sdf = waypoint_sdf(self.waypoint_radius)
 
         rospy.wait_for_service('/gazebo/set_model_state')
         rospy.wait_for_service('/gazebo/spawn_sdf_model')
@@ -432,7 +417,7 @@ class SacEnvV2(gym.Env):
         self.current_waypoint = 0
         self.current_waypoint_position = self.waypoints[self.current_waypoint]
 
-        #self.reset_turtlebot3_gazebo()
+        self.reset_turtlebot3_gazebo()
         self.reset_goal()
 
         self.done = False
@@ -492,7 +477,6 @@ class SacEnvV2(gym.Env):
         print(f"current waypoint position: {self.current_waypoint_position}")
         print(f"current waypoint: {self.current_waypoint}")
         print(f"total waypoints: {len(self.waypoints)}")
-        print(f"goal count: {self.goal_count}")
         print("------------------------------------------")
         print(" ")
 
@@ -553,17 +537,8 @@ class SacEnvV2(gym.Env):
                         if closest_waypoint == (len(waypoints) - 1):
                             reward += reward_goal
 
-                            self.goal_count += 1
                             self.end_episode()
                             print(f"!!!!!ROBOT GOAL REACHED!!!!!")
-
-                            self.goal_df.loc[self.goal_count] = {
-                                'id': self.goal_count, 
-                                'steps': self.step_count, 
-                                'stage': self.stage,
-                                'time': datetime.now().strftime("%d/%m/%Y"),
-                            }
-                            self.goal_df.to_csv(self.goal_file_path)
                         else:
                             reward += reward_waypoint
                             self.current_waypoint = closest_waypoint + 1
@@ -663,6 +638,9 @@ def init_stage_positions(stage):
     if stage == 5: # Turtlebot_world
         init_positions = [[-2, -0.75], [2, 0.75]]
 
+    if stage == 6: # Turtlebot_world
+        init_positions = [[-0.5, 0.5], [1.75, -1.75]]
+
     return np.array(init_positions)
 
 def init_map(stage):
@@ -674,11 +652,14 @@ def init_map(stage):
     if stage == 5: # Turtlebot_world
         map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_turtlebot_world.pgm"
 
+    if stage == 6: # Turtlebot_world
+        map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_local_minimum.pgm"
+
     return map
 
 def main(args=None):
     epochs = 1000
-    timesteps = 10000
+    timesteps = 100000
 
     for i in range(epochs):
         rospy.init_node('sac_env_v2', anonymous=True)
@@ -686,7 +667,7 @@ def main(args=None):
         # Depends on map
         amr_model = 'turtlebot3_burger'
         model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/sac_model_v2.1-demo.pth"
-        stage = 5
+        stage = 6
         stage_positions = init_stage_positions(stage)
         stage_map = init_map(stage)
 

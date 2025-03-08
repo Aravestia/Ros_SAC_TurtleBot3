@@ -88,7 +88,7 @@ class SacEnvV4(gym.Env):
 
         self.grid_row = 384
         self.grid_col = 384
-        self.grid_margin = 5
+        self.grid_margin = 4
         self.grid = a_star.img_to_grid(stage_map, self.grid_margin)
         self.grid_in = copy.deepcopy(self.grid)
         self.grid_x_offset = 200

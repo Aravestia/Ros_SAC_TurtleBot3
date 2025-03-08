@@ -22,7 +22,7 @@ import pandas as pd
 import random
 import time
 
-from sdf_files import goal_sdf
+from create_sdf import goal_sdf
 
 class SacEnv(gym.Env):
     def __init__(self, amr_model='turtlebot3_burger', epoch=0):
@@ -40,7 +40,7 @@ class SacEnv(gym.Env):
 
         self.angle_cap = 2 * math.pi
 
-        self.stage = 2
+        self.stage = 6
         self.init_positions = np.array([[0.0, 0.0], [1.0, 1.0]])
         self.init_positions_previous = self.init_positions
         self.spawn_position = self.init_positions[0]
@@ -69,12 +69,7 @@ class SacEnv(gym.Env):
         self.amr_model = amr_model
         self.epoch = epoch
 
-        self.goal_database = r"/home/aravestia/isim/noetic/src/robot_planner/src/goal.csv"
-        self.goal_df = pd.read_csv(self.goal_database, header=0, index_col=0)
-        self.goal_count = len(self.goal_df)
         self.goal_radius = 0.2
-
-        print(f"{self.goal_df}. {self.goal_count}")
 
         self.goal_sdf = goal_sdf(self.goal_radius)
 
@@ -277,7 +272,6 @@ class SacEnv(gym.Env):
         print(f"step_count: {self.step_count}/{self.max_step_count}")
         print(f"reward: {reward}")
         print(f"record: {self.goal_distance_record}")
-        print(f"goal count: {self.goal_count}")
         print("------------------------------------------")
         print(" ")
 
@@ -338,17 +332,8 @@ class SacEnv(gym.Env):
                 if goal_distance < self.goal_radius:
                     reward += reward_goal
 
-                    self.goal_count += 1
                     self.end_episode()
                     print(f"!!!!!ROBOT GOAL REACHED!!!!!")
-
-                    self.goal_df.loc[self.goal_count] = {
-                        'id': self.goal_count, 
-                        'steps': self.step_count, 
-                        'stage': self.stage,
-                        'time': datetime.now().strftime("%d/%m/%Y"),
-                    }
-                    self.goal_df.to_csv(self.goal_database)
 
         return float(reward)
     
@@ -446,6 +431,12 @@ class SacEnv(gym.Env):
                 [[-0.75, 2], [0.75, -2]]
             ]))
 
+        if stage == 6: # Turtlebot_world
+            init_positions = np.array(random.choice([
+                [[-0.5, 0.5], [1.75, -1.75]],
+                [[-0.5, 0.5], [1.76, -1.76]],
+            ]))
+
         return init_positions
     
     def degree_to_radians(self, angle):
@@ -462,7 +453,7 @@ class SacEnv(gym.Env):
 
 def main(args=None):
     epochs = 1000
-    timesteps = 5000
+    timesteps = 50000
 
     for i in range(epochs):
         rospy.init_node('sac_env', anonymous=True)

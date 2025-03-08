@@ -42,6 +42,8 @@ class SacEnvV3(gym.Env):
         self.laserscan_mincap = 0.12
         self.laserscan_warning_threshold = 0.3
         self.laserscan_warning_threshold_normalised = self.normalise_value(self.laserscan_warning_threshold, self.laserscan_maxcap, self.laserscan_mincap)
+        self.laserscan_front_warning_threshold = 0.5
+        self.laserscan_front_warning_threshold_normalised = self.normalise_value(self.laserscan_front_warning_threshold, self.laserscan_maxcap, self.laserscan_mincap)
         self.laserscan_closest = 1.0
         self.laserscan_closest_angle = 0.0
         self.laserscan = np.full(8, 1.0)
@@ -231,7 +233,13 @@ class SacEnvV3(gym.Env):
         )
         waypoint_closest_angle = self.waypoint_closest_angle
 
-        self.follower_mode = laserscan_closest > self.laserscan_warning_threshold_normalised and self.test_mode
+        self.follower_mode = (
+        laserscan_closest > self.laserscan_warning_threshold_normalised
+        ) and (
+            laserscan[0] > self.laserscan_front_warning_threshold_normalised
+        ) and (
+            laserscan[7] > self.laserscan_front_warning_threshold_normalised
+        ) and self.test_mode
 
         if self.follower_mode_previous != self.follower_mode and self.test_mode:
             self.current_center = current_position
