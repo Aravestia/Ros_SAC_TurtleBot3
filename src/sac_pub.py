@@ -12,9 +12,9 @@ import time
 import os
 
 from sac_env_v3 import SacEnvV3
+from sac_env_v3_5 import SacEnvV3_5
 from sac_env_v4 import SacEnvV4
 import init_stage
-import obstacle
 
 def main(args=None):
     epochs = 10000
@@ -27,8 +27,7 @@ def main(args=None):
     amr_model = 'turtlebot3_burger'
     model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/sac_model_v3.0.pth"
 
-    #stage = 'turtlebot_world_test' if test_mode else 'turtlebot_world_train'\
-    stage = 'local_minimum'
+    stage = 'local_minimum' if test_mode else 'local_minimum_train'
     stage_positions = init_stage.init_stage_positions(stage)
     stage_map = init_stage.init_map(stage)
     stage_map_custom = obstacle.custom_stage.CustomStage()

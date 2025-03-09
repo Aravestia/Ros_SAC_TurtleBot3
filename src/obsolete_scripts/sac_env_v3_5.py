@@ -27,9 +27,9 @@ import a_star
 import create_sdf
 import reset_state
 
-class SacEnvV3(gym.Env):
+class SacEnvV3_5(gym.Env):
     def __init__(self, amr_model='turtlebot3_burger', epoch=0, init_positions=[], stage_map="", yaw=0.0, max_timesteps=10000, test_mode=False):
-        super(SacEnvV3, self).__init__()
+        super(SacEnvV3_5, self).__init__()
 
         self.velocity_multiplier = 0.15
         self.angular_velocity_multiplier = 2.84
@@ -99,7 +99,7 @@ class SacEnvV3(gym.Env):
         self.grid_spawn = a_star.point_to_grid(self.grid_x_offset, self.grid_y_offset, self.spawn_position[0], self.spawn_position[1])
         self.grid_goal = a_star.point_to_grid(self.grid_x_offset, self.grid_y_offset, self.goal_position[0], self.goal_position[1])
 
-        self.waypoint_occurrence = 3
+        self.waypoint_occurrence = 2
         self.waypoints = a_star.a_star_search(
             self.grid_in,
             self.grid_spawn, 
@@ -123,6 +123,10 @@ class SacEnvV3(gym.Env):
 
         self.moving_obstacle_radius = 0.15
         self.goal_sdf = create_sdf.goal_sdf(self.goal_radius)
+
+        self.cumulative_reward_file_path = r"/home/aravestia/isim/noetic/src/robot_planner/src/cumulative_reward.csv"
+        self.cumulative_reward = 0
+        self.cumulative_reward_df = pd.read_csv(self.cumulative_reward_file_path, index_col=0)
 
         rospy.wait_for_service('/gazebo/set_model_state')
         rospy.wait_for_service('/gazebo/spawn_sdf_model')
@@ -266,6 +270,8 @@ class SacEnvV3(gym.Env):
 
         self.reset_count += 1
 
+        self.cumulative_reward = 0
+
         self.velocity = -1.0
         self.velocity_previous = -1.0
         self.angular_velocity = 0.0
@@ -396,12 +402,12 @@ class SacEnvV3(gym.Env):
         collision_threshold = self.normalise_value(self.laserscan_mincap + 0.01, self.laserscan_maxcap, self.laserscan_mincap)
         warning_threshold = self.laserscan_warning_threshold_normalised
         velocity_threshold = -0.9
-        waypoint_distance_threshold = 0.25
+        waypoint_distance_threshold = 0.5
         laserscan_angle_threshold = 0.4
 
         penalty_collision = -1.0
         penalty_step_count_maxed = -1.0
-        penalty_step_count = -step_count / self.max_step_count
+        penalty_step_count = -1.0
         penalty_distance_from_waypoint = 0 if (
             distance_from_waypoint < waypoint_distance_threshold
         ) else (
@@ -411,27 +417,17 @@ class SacEnvV3(gym.Env):
             laserscan_closest > warning_threshold
         ) else -(warning_threshold - laserscan_closest) / (warning_threshold - collision_threshold)
         penalty_facing_obstacle = 0
-        reward_velocity = 0.5 * (1 + velocity)
         penalty_rapid_acceleration = -0.5 * abs(self.velocity_previous - velocity)
         penalty_rapid_turning = -0.5 * abs(self.angular_velocity_previous - angular_velocity)
         penalty_high_turning = -abs(angular_velocity)
 
         reward_goal = 1.0
-        reward_facing_waypoint = 1.0 - abs(waypoint_closest_angle)
-        reward_waypoint = 1.0 if (
+        reward_velocity = 0.5 * (1 + velocity)
+        reward_facing_waypoint = max(reward_velocity + penalty_high_turning, 0) if abs(waypoint_closest_angle) < 0.5 else 0
+        reward_waypoint = max(reward_velocity + penalty_high_turning, 0) if (
             distance_from_waypoint < waypoint_distance_threshold
         ) else 0
         reward_turning_away = 0
-
-        if laserscan_closest <= warning_threshold and abs(laserscan_closest_angle) < laserscan_angle_threshold:
-            if velocity > velocity_threshold:
-                reward_velocity =  (1 - velocity) / (1 - velocity_threshold)
-            else:
-                reward_velocity = (1 + velocity) / (1 + velocity_threshold)
-
-            penalty_facing_obstacle = -(laserscan_angle_threshold - abs(laserscan_closest_angle)) / laserscan_angle_threshold
-            reward_waypoint = 0
-            penalty_high_turning = 0
 
         self.velocity_previous = velocity
         self.angular_velocity_previous = angular_velocity
@@ -441,38 +437,49 @@ class SacEnvV3(gym.Env):
         if self.total_timesteps > self.max_timesteps - 5:
             self.goal_df.to_csv(self.goal_file_path)
         
-        if self.waypoint_closest >= len(self.waypoints) - 1: # Reached Goal
+        if self.waypoint_closest >= len(self.waypoints) - 1 and distance_from_waypoint < self.waypoint_min_distance_threshold: # Reached Goal
             reward += 10.0 * reward_goal
             self.completion_count += 1
-            self.end_episode()
+            self.end_episode(float(reward))
             print(f"!!!!!ROBOT GOAL REACHED!!!!!")
             return float(reward)
 
-        reward += 2.0 * reward_waypoint
-        reward += 1.0 * reward_velocity
-        reward += 2.0 * penalty_distance_from_waypoint
-        reward += 0.5 * penalty_rapid_acceleration 
-        reward += 0.5 * penalty_rapid_turning
-        reward += 2.0 * penalty_high_turning
-        reward += 4.0 * penalty_facing_obstacle
-        reward += 4.0 * penalty_obstacle_proximity
-        reward += 0.25 * penalty_step_count
+        reward += 0.02 * reward_waypoint
+        reward += 0.005 * reward_facing_waypoint
+        #reward += 0.05 * reward_velocity
+        #reward += 0.2 * penalty_distance_from_waypoint
+        #reward += 0.025 * penalty_rapid_acceleration 
+        #reward += 0.025 * penalty_rapid_turning
+        #reward += 0.05 * penalty_high_turning
+        #reward += 0.05 * penalty_facing_obstacle
+        #reward += 0.01 * penalty_obstacle_proximity
+        reward += 0.001 * penalty_step_count
+
+        self.cumulative_reward += float(reward)
 
         if self.step_count >= self.max_step_count: # Maxed Step Count
-           reward += 10.0 * penalty_step_count_maxed
-           self.end_episode()
+           reward += 3.0 * penalty_step_count_maxed
+           self.end_episode(float(reward))
            return float(reward)
 
         if laserscan_closest <= collision_threshold: # Collision
             reward += 10.0 * penalty_collision
-            self.end_episode()
+            self.end_episode(float(reward))
             print(f"!!!!!ROBOT COLLISION!!!!! scan: {laserscan_closest}")
             return float(reward)
 
         return float(reward)
     
-    def end_episode(self):
+    def end_episode(self, reward):
         self.goal_count += 1
+
+        self.cumulative_reward += reward
+        self.cumulative_reward_df.loc[len(self.cumulative_reward_df)] = {
+            "episode" : len(self.cumulative_reward_df),
+            "cumulative reward" : self.cumulative_reward,
+            }
+        self.cumulative_reward_df.to_csv(self.cumulative_reward_file_path)
+
         self.done = True
     
     def degree_to_radians(self, angle):
