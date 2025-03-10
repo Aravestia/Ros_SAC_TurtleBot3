@@ -6,7 +6,7 @@ def init_stage_positions(stage, epoch=0):
     init_choices = []
 
     if stage == 1:
-        init_positions = [[1, 1], [-1.25, -1.25]]
+        init_positions = [[1, 1], [-1, -1]]
     elif stage == 2:
         init_positions = [[1.25, 0.5], [0, 0]]   
     elif stage == 3:

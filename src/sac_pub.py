@@ -8,9 +8,9 @@ from stable_baselines3 import SAC
 import time
 import os
 
-#from sac_env_v1_basic import SacEnv
+from sac_env_v1_basic import SacEnv
 #from sac_env_v2_a_star import SacEnv
-from sac_env_v3_SAS import SacEnv
+#from sac_env_v3_SAS import SacEnv
 
 from initialisation.obstacle.obstacle_5 import Obstacle
 from initialisation.custom_stage.custom_stage_1 import CustomStage
@@ -22,18 +22,18 @@ def main(args=None):
 
     rospy.init_node('sac_pub', anonymous=True)
 
-    test_mode = True
-    stage_custom = True
-    stage_obstacle = True
+    test_mode = False
+    stage_custom = False
+    stage_obstacle = False
     amr_model = 'turtlebot3_burger'
-    env_version = 3
-    model_version = "3.1"
+    env_version = 1
+    model_version = "1.3"
 
     model_pth = os.path.dirname(os.path.abspath(__file__))
     model_pth = os.path.join(model_pth, "models", f"v{env_version}", f"sac_model_v{model_version}.pth")
 
     if env_version == 1:
-        stage = 2
+        stage = 'local_minimum' if test_mode else 1
     elif env_version == 2:
         stage = 'turtlebot_world' if test_mode else 'turtlebot_world_train'
     elif env_version == 3:

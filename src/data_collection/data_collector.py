@@ -15,6 +15,6 @@ def find_csv(csv_name, dataframe):
     dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), csv_name)
 
     if os.path.exists(dir):
-        return pd.read_csv(dir, index_col=0)
+        return pd.read_csv(dir)
     
     return dataframe

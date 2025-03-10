@@ -23,6 +23,7 @@ import random
 import time
 
 from initialisation import sdf_templates, init_state
+from data_collection import data_collector
 
 class SacEnv(gym.Env):
     def __init__(self, amr_model='turtlebot3_burger', epoch=0, init_positions=[], stage_map="", yaw=0.0, max_timesteps=10000, test_mode=False):
@@ -59,7 +60,7 @@ class SacEnv(gym.Env):
         self.truncated = False
         self.total_timesteps = 0
         self.step_count = 0
-        self.max_step_count = 1000
+        self.max_step_count = 500
         self.stagnant_count = 0
         self.max_stagnant_count = 10
         self.reset_count = 0
@@ -71,6 +72,17 @@ class SacEnv(gym.Env):
         self.goal_radius = 0.2
 
         self.goal_sdf = sdf_templates.goal_sdf(self.goal_radius)
+
+        self.database = "data_v1.csv" if test_mode else "data_v1_train.csv"
+        self.data = data_collector.find_csv(
+            self.database, 
+            pd.DataFrame({
+                'episode': [],
+                'final position x': [],
+                'final position y': [],
+                'success': [],
+            })
+        )
 
         rospy.wait_for_service('/gazebo/set_model_state')
         rospy.wait_for_service('/gazebo/spawn_sdf_model')
@@ -264,6 +276,8 @@ class SacEnv(gym.Env):
         goal_distance = goal_distance_normalised * self.goal_distance_from_spawn
         goal_distance_previous = self.goal_distance_previous
 
+        position = self.position
+
         goal_angle = self.observation_state[1]
 
         laserscan_closest = self.observation_state[2]
@@ -276,29 +290,30 @@ class SacEnv(gym.Env):
 
         self.goal_distance_previous = goal_distance
 
-        reward_distance_from_goal = 1.0 * (1 - goal_distance_normalised) if abs(self.angular_velocity) < 1 else min(1.0 * (1 - goal_distance_normalised), 0)
-        reward_facing_goal = 0.5 if (
-            (abs(goal_angle) < math.pi/4) and (laserscan_closest > 0.3) and abs(self.angular_velocity) < 0.8
+        reward_distance_from_goal = 1.0 * (1 - goal_distance_normalised)
+        reward_facing_goal = 0.2 if (
+            (abs(goal_angle) < math.pi/4) and (laserscan_closest > 0.3)
         ) else 0
+
         penalty_obstacle_proximity = 0 if (
             laserscan_closest > 0.3
         ) else (
             -4.0 * (0.3 - laserscan_closest) / (0.3 - collision_threshold)
         )
         penalty_collision = -100
-        penalty_step_count = -0.05
-        penalty_step_count_maxed = -20
+        penalty_step_count = -0.5 * step_count / self.max_step_count
+        penalty_step_count_maxed = -25
 
         if self.step_count >= self.max_step_count:
            reward = reward_distance_from_goal + penalty_step_count_maxed
-           self.end_episode()
+           self.end_episode(position[0], position[1], 0)
         else:
             if self.goal_distance_record > goal_distance_normalised:
                 self.goal_distance_record = goal_distance_normalised
 
             if laserscan_closest < collision_threshold:
                 reward = reward_distance_from_goal + penalty_collision + penalty_obstacle_proximity + penalty_step_count + reward_facing_goal
-                self.end_episode()
+                self.end_episode(position[0], position[1], 0)
                 print(f"!!!!!ROBOT COLLISION!!!!! scan: {laserscan_closest}")
             else:
                 reward = reward_distance_from_goal + penalty_obstacle_proximity + penalty_step_count + reward_facing_goal
@@ -306,13 +321,14 @@ class SacEnv(gym.Env):
                 if goal_distance < self.goal_radius:
                     reward += reward_goal
 
-                    self.end_episode()
+                    self.end_episode(position[0], position[1], 1)
                     print(f"!!!!!ROBOT GOAL REACHED!!!!!")
 
         return float(reward)
     
-    def end_episode(self):
+    def end_episode(self, pos_x, pos_y, success):
         self.goal_distance_record = 1.0
+        data_collector.collect_data(self.data, pos_x, pos_y, success, self.database)
         self.done = True
     
     def degree_to_radians(self, angle):
@@ -326,39 +342,4 @@ class SacEnv(gym.Env):
             angle += 2 * math.pi
 
         return angle
-
-def main(args=None):
-    epochs = 1000
-    timesteps = 50000
-
-    for i in range(epochs):
-        rospy.init_node('sac_env', anonymous=True)
-
-        # Depends on map
-        amr_model = 'turtlebot3_burger'
-        model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/sac_model_v1.1.pth"
-
-        env = SacEnv(amr_model=amr_model, epoch=(i + 1))
-        #env.reset()
-
-        check_env(env)
-
-        print(os.path.exists(model_pth))
-        model = SAC.load(path=model_pth, env=env) if os.path.exists(model_pth) else SAC('MlpPolicy', env, ent_coef='auto', verbose=1)
-        model.learn(total_timesteps=timesteps)
-        model.save(model_pth)
-
-        print(f"model saved! Epoch: {i + 1}")
-
-        env.reset()
-        time.sleep(5)
-
-    #obs = env.reset()
-    #done = False
-    #while not done:
-        #action, _states = model.predict(obs)
-        #obs, rewards, done, info = env.step(action)
-
-if __name__ == '__main__':
-    main()
 
