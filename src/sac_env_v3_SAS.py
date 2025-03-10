@@ -9,7 +9,7 @@ from geometry_msgs.msg import Twist
 import gymnasium as gym
 from gymnasium import spaces
 from stable_baselines3 import SAC
-from stable_baselines3.common.env_checker import check_env
+#from stable_baselines3.common.env_checker import check_env
 
 import math
 import tf
@@ -23,13 +23,12 @@ import copy
 import csv
 import asyncio
 
-import a_star
-import create_sdf
-import reset_state
+from maps import a_star
+from initialisation import sdf_templates, init_state
 
-class SacEnvV3(gym.Env):
+class SacEnv(gym.Env):
     def __init__(self, amr_model='turtlebot3_burger', epoch=0, init_positions=[], stage_map="", yaw=0.0, max_timesteps=10000, test_mode=False):
-        super(SacEnvV3, self).__init__()
+        super(SacEnv, self).__init__()
 
         self.velocity_multiplier = 0.15
         self.angular_velocity_multiplier = 2.84
@@ -82,9 +81,6 @@ class SacEnvV3(gym.Env):
         self.amr_model = amr_model
         self.epoch = epoch
 
-        self.goal_file_path = r"/home/aravestia/isim/noetic/src/robot_planner/src/score.csv"
-        self.goal_df = pd.read_csv(self.goal_file_path, header=0, index_col=0)
-        self.goal_count = len(self.goal_df)
         self.goal_radius = 0.2
         self.completion_count = 0
 
@@ -122,15 +118,15 @@ class SacEnvV3(gym.Env):
         self.test_mode = test_mode
 
         self.moving_obstacle_radius = 0.15
-        self.goal_sdf = create_sdf.goal_sdf(self.goal_radius)
+        self.goal_sdf = sdf_templates.goal_sdf(self.goal_radius)
 
         rospy.wait_for_service('/gazebo/set_model_state')
         rospy.wait_for_service('/gazebo/spawn_sdf_model')
         rospy.wait_for_service('/gazebo/get_world_properties')
         rospy.wait_for_service('/gazebo/delete_model')
 
-        reset_state.reset_turtlebot3_gazebo(self.spawn_position, self.amr_model)
-        reset_state.reset_goal(self.goal_position, self.goal_sdf)
+        init_state.reset_turtlebot3_gazebo(self.spawn_position, self.amr_model)
+        init_state.reset_goal(self.goal_position, self.goal_sdf)
 
         self.laserscan_subscriber = rospy.Subscriber('/scan', LaserScan, self.laserscan_callback)
         self.odometry_subscriber = rospy.Subscriber('/odom', Odometry, self.odometry_callback)
@@ -277,7 +273,7 @@ class SacEnvV3(gym.Env):
         self.position = self.spawn_position
         self.goal_position = self.init_positions[1]
 
-        reset_state.reset_turtlebot3_gazebo(self.spawn_position, self.amr_model)
+        init_state.reset_turtlebot3_gazebo(self.spawn_position, self.amr_model)
             
         self.goal_distance_from_spawn_vector = self.goal_position - self.spawn_position
         self.goal_distance_from_spawn = np.linalg.norm(self.goal_distance_from_spawn_vector)
@@ -437,13 +433,9 @@ class SacEnvV3(gym.Env):
         self.angular_velocity_previous = angular_velocity
 
         reward = 0.0
-
-        if self.total_timesteps > self.max_timesteps - 5:
-            self.goal_df.to_csv(self.goal_file_path)
         
         if self.waypoint_closest >= len(self.waypoints) - 1: # Reached Goal
             reward += 10.0 * reward_goal
-            self.completion_count += 1
             self.end_episode()
             print(f"!!!!!ROBOT GOAL REACHED!!!!!")
             return float(reward)
@@ -472,7 +464,7 @@ class SacEnvV3(gym.Env):
         return float(reward)
     
     def end_episode(self):
-        self.goal_count += 1
+        self.completion_count += 1
         self.done = True
     
     def degree_to_radians(self, angle):

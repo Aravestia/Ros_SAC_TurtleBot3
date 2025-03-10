@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 
-import obstacle.custom_stage
-import obstacle.obstacle_4
-import obstacle.obstacle_5
 import rospy
 
 from stable_baselines3 import SAC
@@ -11,10 +8,10 @@ from stable_baselines3 import SAC
 import time
 import os
 
-from sac_env_v3 import SacEnvV3
-from sac_env_v3_5 import SacEnvV3_5
-from sac_env_v4 import SacEnvV4
-import init_stage
+from sac_env_v3_SAS import SacEnv
+from initialisation.obstacle.obstacle_5 import Obstacle
+from initialisation.custom_stage.custom_stage_1 import CustomStage
+from initialisation import init_stage
 
 def main(args=None):
     epochs = 10000
@@ -25,16 +22,20 @@ def main(args=None):
     test_mode = True
 
     amr_model = 'turtlebot3_burger'
-    model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/sac_model_v3.0.pth"
+    env_version = 3
+    model_version = "3.0"
+    model_pth = r"/home/aravestia/isim/noetic/src/robot_planner/src/models/v" + str(env_version)
+    model_pth += (r"/sac_model_v" + model_version + r".pth")
 
     stage = 'local_minimum' if test_mode else 'local_minimum_train'
     stage_positions = init_stage.init_stage_positions(stage)
     stage_map = init_stage.init_map(stage)
-    stage_map_custom = obstacle.custom_stage.CustomStage()
-    stage_obstacle = obstacle.obstacle_5.Obstacle()
+
+    stage_map_custom = CustomStage()
+    stage_obstacle = Obstacle()
 
     if test_mode:
-        env = SacEnvV3(
+        env = SacEnv(
             amr_model=amr_model,
             epoch=1,
             init_positions=stage_positions,
@@ -60,7 +61,7 @@ def main(args=None):
         for i in range(epochs):
             stage_positions = init_stage.init_stage_positions(stage, i)
 
-            env = SacEnvV3(
+            env = SacEnv(
                 amr_model=amr_model,
                 epoch=(i + 1),
                 init_positions=stage_positions,

@@ -33,18 +33,18 @@ def init_stage_positions(stage, epoch=0):
     return np.array(init_positions)
 
 def init_map(stage):
-    map = ""
+    map = r"/home/aravestia/isim/noetic/src/robot_planner/src/maps/"
 
     if stage == 2:
-        map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_stage2.pgm"
+        map += r"map_stage2.pgm"
     elif stage == 'turtlebot_world_train':
-        map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_turtlebot_world.pgm"
+        map += r"map_turtlebot_world.pgm"
     elif stage == 'turtlebot_world_test':
-        map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_turtlebot_world.pgm"
+        map += r"map_turtlebot_world.pgm"
     elif stage == 'local_minimum':
-        map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_local_minimum.pgm"
+        map += r"map_local_minimum.pgm"
     elif stage == 'local_minimum_train':
-        map = r"/home/aravestia/isim/noetic/src/robot_planner/src/map/map_local_minimum.pgm"
+        map += r"map_local_minimum.pgm"
     else:
         return None
 

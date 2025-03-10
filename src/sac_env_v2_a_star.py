@@ -30,9 +30,9 @@ import csv
 
 from create_sdf import goal_sdf
 
-class SacEnvV2(gym.Env):
+class SacEnv(gym.Env):
     def __init__(self, amr_model='turtlebot3_burger', epoch=0, init_positions=[], stage_map="", yaw=0.0):
-        super(SacEnvV2, self).__init__()
+        super(SacEnv, self).__init__()
 
         self.velocity_multiplier = 0.15
         self.angular_velocity_multiplier = 2.84
@@ -671,7 +671,7 @@ def main(args=None):
         stage_positions = init_stage_positions(stage)
         stage_map = init_map(stage)
 
-        env = SacEnvV2(
+        env = SacEnv(
             amr_model=amr_model,
             epoch=(i + 1),
             init_positions=stage_positions,
