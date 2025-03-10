@@ -22,13 +22,13 @@ import pandas as pd
 import random
 import time
 
-from create_sdf import goal_sdf
+from initialisation import sdf_templates, init_state
 
 class SacEnv(gym.Env):
-    def __init__(self, amr_model='turtlebot3_burger', epoch=0):
+    def __init__(self, amr_model='turtlebot3_burger', epoch=0, init_positions=[], stage_map="", yaw=0.0, max_timesteps=10000, test_mode=False):
         super(SacEnv, self).__init__()
 
-        self.velocity_multiplier = 0.13
+        self.velocity_multiplier = 0.22
         self.angular_velocity_multiplier = 2.84
         self.velocity = self.velocity_multiplier
         self.angular_velocity = 0.0
@@ -40,8 +40,7 @@ class SacEnv(gym.Env):
 
         self.angle_cap = 2 * math.pi
 
-        self.stage = 6
-        self.init_positions = np.array([[0.0, 0.0], [1.0, 1.0]])
+        self.init_positions = init_positions
         self.init_positions_previous = self.init_positions
         self.spawn_position = self.init_positions[0]
         self.position = self.spawn_position
@@ -71,24 +70,15 @@ class SacEnv(gym.Env):
 
         self.goal_radius = 0.2
 
-        self.goal_sdf = goal_sdf(self.goal_radius)
+        self.goal_sdf = sdf_templates.goal_sdf(self.goal_radius)
 
         rospy.wait_for_service('/gazebo/set_model_state')
         rospy.wait_for_service('/gazebo/spawn_sdf_model')
         rospy.wait_for_service('/gazebo/get_world_properties')
         rospy.wait_for_service('/gazebo/delete_model')
 
-        self.set_model_state = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
-        self.spawn_model = rospy.ServiceProxy('/gazebo/spawn_sdf_model', SpawnModel)
-        self.delete_model = rospy.ServiceProxy('/gazebo/delete_model', DeleteModel)
-        self.get_world_properties = rospy.ServiceProxy('/gazebo/get_world_properties', GetWorldProperties)
-
-        ### Set Specific properties for world ###
-        self.model_names = self.get_world_properties().model_names
-        for i in range(1,10001):
-            if (f'goal_marker_{str(i)}') in self.model_names:
-                self.delete_model(f'goal_marker_{str(i)}')
-        #########################################
+        init_state.reset_turtlebot3_gazebo(self.spawn_position, self.amr_model, randomise=True)
+        init_state.reset_goal(self.goal_position, self.goal_sdf)
 
         self.laserscan_subscriber = rospy.Subscriber('/scan', LaserScan, self.laserscan_callback)
         self.odometry_subscriber = rospy.Subscriber('/odom', Odometry, self.odometry_callback)
@@ -97,8 +87,8 @@ class SacEnv(gym.Env):
 
         # Action space: [velocity, angular velocity]
         self.action_space = spaces.Box(
-            low=np.array([-1.0]), 
-            high=np.array([1.0]),
+            low=np.array([-1.0, -1.0]), 
+            high=np.array([1.0, 1.0]),
             dtype=np.float32
         )
 
@@ -151,13 +141,9 @@ class SacEnv(gym.Env):
 
         self.yaw = euler[2]
 
-    def publish_velocity(self, angular_velocity, laserscan_closest=1, goal_distance=1):
-        self.velocity = self.velocity_multiplier if (
-            goal_distance > self.goal_radius + 0.15
-        ) else (0.5 * self.velocity_multiplier)
-
+    def publish_velocity(self, velocity, angular_velocity, laserscan_closest=1, goal_distance=1):
         twist = Twist()
-        twist.linear.x = self.velocity
+        twist.linear.x = velocity
         twist.angular.z = angular_velocity
         self.twist_publisher.publish(twist)
 
@@ -195,14 +181,9 @@ class SacEnv(gym.Env):
         super().reset(seed=seed)
 
         self.reset_count += 1
-        self.publish_velocity(0)
-
-        while (self.init_positions == self.init_positions_previous).all():
-            self.init_positions = self.init_stage_positions(self.stage)
+        self.publish_velocity(0, 0)
 
         self.spawn_position = self.init_positions[0]
-        self.init_positions_previous = self.init_positions
-
         self.position = self.spawn_position
         self.goal_position = self.init_positions[1]
             
@@ -215,8 +196,8 @@ class SacEnv(gym.Env):
             self.goal_position[0] - self.spawn_position[0]
         )
 
-        self.reset_turtlebot3_gazebo()
-        self.reset_goal()
+        init_state.reset_turtlebot3_gazebo(self.spawn_position, self.amr_model, randomise=True)
+        #init_state.reset_goal(self.goal_position, self.goal_sdf)
 
         self.done = False
         self.truncated = False
@@ -241,15 +222,16 @@ class SacEnv(gym.Env):
         
         self.observation_state = self._get_observation_state()
 
-        #self.velocity = float((action[0] + 1) * 0.5 * self.velocity_multiplier)
-        self.angular_velocity = float(action[0] * self.angular_velocity_multiplier)
+        self.velocity = float((action[0] + 1) * 0.5 * self.velocity_multiplier)
+        self.angular_velocity = float(action[1] * self.angular_velocity_multiplier)
         self.publish_velocity(
+            velocity = self.velocity,
             angular_velocity = self.angular_velocity,
             laserscan_closest = self.observation_state[3], 
             goal_distance = self.observation_state[0] * self.goal_distance_from_spawn
         )
 
-        rospy.sleep(0.08)
+        rospy.sleep(0.05)
 
         reward = self._compute_reward()
 
@@ -287,47 +269,39 @@ class SacEnv(gym.Env):
         laserscan_closest = self.observation_state[2]
 
         step_count = self.step_count
-        stagnant_count = self.stagnant_count
 
         collision_threshold = self.laserscan_mincap + 0.02
 
-        reward_goal = 30 + (20 / self.max_step_count) * (self.max_step_count - step_count)
+        reward_goal = 100 + (20 / self.max_step_count) * (self.max_step_count - step_count)
 
-        if abs(goal_distance - goal_distance_previous) < 0.002 and goal_distance >= self.goal_radius:
-            stagnant_count += 1
-            print("!!!ROBOT STAGNANT!!!")
-        else:
-            stagnant_count = 0
-
-        self.stagnant_count = stagnant_count
         self.goal_distance_previous = goal_distance
 
-        penalty_distance_from_goal = -1 * goal_distance_normalised
-        penalty_not_facing_goal = 0 if (
-            (abs(goal_angle) < math.pi/4) and (laserscan_closest > collision_threshold + 0.02)
-        ) else -0.2
+        reward_distance_from_goal = 1.0 * (1 - goal_distance_normalised) if abs(self.angular_velocity) < 1 else min(1.0 * (1 - goal_distance_normalised), 0)
+        reward_facing_goal = 0.5 if (
+            (abs(goal_angle) < math.pi/4) and (laserscan_closest > 0.3) and abs(self.angular_velocity) < 0.8
+        ) else 0
         penalty_obstacle_proximity = 0 if (
             laserscan_closest > 0.3
         ) else (
-            min(-5 * (((self.laserscan_maxcap - laserscan_closest) / (self.laserscan_maxcap - self.laserscan_mincap)) ** 20), 0)
+            -4.0 * (0.3 - laserscan_closest) / (0.3 - collision_threshold)
         )
-        penalty_collision = -50
-        penalty_step_count = -(1 / self.max_step_count) * (step_count - 1)
-        penalty_step_count_maxed = -50
+        penalty_collision = -100
+        penalty_step_count = -0.05
+        penalty_step_count_maxed = -20
 
         if self.step_count >= self.max_step_count:
-           reward = penalty_distance_from_goal + penalty_step_count_maxed
+           reward = reward_distance_from_goal + penalty_step_count_maxed
            self.end_episode()
         else:
             if self.goal_distance_record > goal_distance_normalised:
                 self.goal_distance_record = goal_distance_normalised
 
             if laserscan_closest < collision_threshold:
-                reward = penalty_distance_from_goal + penalty_collision + penalty_obstacle_proximity + penalty_step_count + penalty_not_facing_goal
+                reward = reward_distance_from_goal + penalty_collision + penalty_obstacle_proximity + penalty_step_count + reward_facing_goal
                 self.end_episode()
                 print(f"!!!!!ROBOT COLLISION!!!!! scan: {laserscan_closest}")
             else:
-                reward = penalty_distance_from_goal + penalty_obstacle_proximity + penalty_step_count + penalty_not_facing_goal
+                reward = reward_distance_from_goal + penalty_obstacle_proximity + penalty_step_count + reward_facing_goal
 
                 if goal_distance < self.goal_radius:
                     reward += reward_goal
@@ -340,104 +314,6 @@ class SacEnv(gym.Env):
     def end_episode(self):
         self.goal_distance_record = 1.0
         self.done = True
-        
-    def reset_goal(self):
-        model_name = "goal_marker_"
-
-        model_state_msg = ModelState()
-        model_state_msg.model_name = model_name + str(self.reset_count)
-        model_state_msg.pose.position.x = self.goal_position[0]
-        model_state_msg.pose.position.y = self.goal_position[1]
-        model_state_msg.pose.position.z = 0.0
-        model_state_msg.pose.orientation.x = 0.0
-        model_state_msg.pose.orientation.y = 0.0
-        model_state_msg.pose.orientation.z = 0.0
-        model_state_msg.pose.orientation.w = 1.0
-        model_state_msg.reference_frame = 'world'
-
-        world_properties = self.get_world_properties()
-
-        if world_properties and (model_name + str(self.reset_count - 1)) in world_properties.model_names:
-            self.delete_model(model_name + str(self.reset_count - 1))
-
-        rospy.sleep(0.1)
-        self.spawn_model(model_state_msg.model_name, self.goal_sdf, "", model_state_msg.pose, "world")
-        print(f"Goal set. {self.goal_position}")
-
-    def reset_turtlebot3_gazebo(self):
-        yaw = math.pi * random.uniform(-1, 1)
-        quaternion = tf.transformations.quaternion_from_euler(0.0, 0.0, yaw)
-
-        model_state_msg = ModelState()
-        model_state_msg.model_name = self.amr_model
-        model_state_msg.pose.position.x = self.spawn_position[0]
-        model_state_msg.pose.position.y = self.spawn_position[1]
-        model_state_msg.pose.position.z = 0.0
-        model_state_msg.pose.orientation.x = 0.0
-        model_state_msg.pose.orientation.y = 0.0
-        model_state_msg.pose.orientation.z = quaternion[2]
-        model_state_msg.pose.orientation.w = quaternion[3]
-        model_state_msg.twist.linear.x = 0.0
-        model_state_msg.twist.linear.y = 0.0
-        model_state_msg.twist.linear.z = 0.0
-        model_state_msg.twist.angular.x = 0.0
-        model_state_msg.twist.angular.y = 0.0
-        model_state_msg.twist.angular.z = 0.0
-        model_state_msg.reference_frame = 'world'
-
-        self.set_model_state(model_state_msg)
-        print(f"Turtlebot set. {self.spawn_position}")
-        
-    def init_stage_positions(self, stage):
-        init_positions = np.array([[], []])
-
-        if stage == 1:
-            init_positions = np.array(random.choice([
-                [[1, 1], [-1.25, -1.25]],
-                [[-1, -1], [1.25, 1.25]],
-                [[1, -1], [-1.25, 1.25]],
-                [[-1, 1], [1.25, -1.25]]
-            ]))
-
-        if stage == 2:
-            init_positions = np.array(random.choice([
-                [[1.25, 1.25], [0, 0]],
-                [[-1.25, -1.25], [0, 0]],
-                [[1.25, -1.25], [0, 0]],
-                [[-1.25, 1.25], [0, 0]]
-            ]))
-
-        if stage == 3:
-            init_positions = np.array(random.choice([
-                [[1, 1], [-1.25, -1.25]],
-                [[-1, -1], [1.25, 1.25]],
-                [[1, -1], [-1.25, 1.25]],
-                [[-1, 1], [1.25, -1.25]]
-            ]))
-
-        if stage == 4:
-            init_positions = np.array(random.choice([
-                #[[2, -1.5], [-2, 2]],
-                #[[1.5, -2], [-2, 2]],
-                [[-2, 1.5], [2, -2]],
-                [[-1.5, 2], [2, -2]]
-            ]))
-
-        if stage == 5: # Turtlebot_world
-            init_positions = np.array(random.choice([
-                [[-2, -0.75], [2, 0.75]],
-                [[2, -0.75], [-2, 0.75]],
-                [[0.75, 2], [-0.75, -2]],
-                [[-0.75, 2], [0.75, -2]]
-            ]))
-
-        if stage == 6: # Turtlebot_world
-            init_positions = np.array(random.choice([
-                [[-0.5, 0.5], [1.75, -1.75]],
-                [[-0.5, 0.5], [1.76, -1.76]],
-            ]))
-
-        return init_positions
     
     def degree_to_radians(self, angle):
         angle = angle * (math.pi / 180)

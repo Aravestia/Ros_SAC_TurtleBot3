@@ -3,6 +3,8 @@ from gazebo_msgs.srv import SetModelState, SpawnModel, DeleteModel, GetWorldProp
 from gazebo_msgs.msg import ModelState
 import rospy
 import tf
+import math
+import random
 
 set_model_state = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
 spawn_model = rospy.ServiceProxy('/gazebo/spawn_sdf_model', SpawnModel)
@@ -38,7 +40,8 @@ def reset_goal(goal_position, goal_sdf):
     spawn_model(model_state_msg.model_name, goal_sdf, "", model_state_msg.pose, "world")
     print(f"Goal set. {goal_position}")
 
-def reset_turtlebot3_gazebo(spawn_position, amr_model, yaw=0.0):
+def reset_turtlebot3_gazebo(spawn_position, amr_model, randomise=False):
+    yaw = math.pi * random.uniform(-1, 1) if randomise else 0.0
     quaternion = tf.transformations.quaternion_from_euler(0.0, 0.0, yaw)
 
     model_state_msg = ModelState()

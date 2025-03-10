@@ -22,6 +22,7 @@ class Obstacle():
         #self.spawn_obstacle(self.base_x, self.base_y, "obstacle_1", self.radius)
         #self.spawn_obstacle(self.base_x, -self.base_y, "obstacle_2", self.radius)
         self.spawn_obstacle(1.75, 1, "obstacle_1", self.radius)
+        self.spawn_obstacle(0.25, 1, "obstacle_2", self.radius)
     
     def spawn_obstacle(self, x, y, name, radius):
         model_state_msg = ModelState()
