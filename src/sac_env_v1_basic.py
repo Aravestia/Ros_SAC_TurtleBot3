@@ -68,12 +68,13 @@ class SacEnv(gym.Env):
 
         self.amr_model = amr_model
         self.epoch = epoch
+        self.test_mode = test_mode
+        self.randomise = not self.test_mode
 
         self.goal_radius = 0.25
-
         self.goal_sdf = sdf_templates.goal_sdf(self.goal_radius)
 
-        self.database = "data_v1_map_1.csv" if test_mode else "data_v1_train.csv"
+        self.database = "data_v1_map_1.csv" if self.test_mode else "data_v1_train.csv"
         self.data = data_collector.find_csv(
             self.database, 
             pd.DataFrame({
@@ -91,7 +92,7 @@ class SacEnv(gym.Env):
         rospy.wait_for_service('/gazebo/get_world_properties')
         rospy.wait_for_service('/gazebo/delete_model')
 
-        init_state.reset_turtlebot3_gazebo(self.spawn_position, self.amr_model, randomise=True)
+        init_state.reset_turtlebot3_gazebo(self.spawn_position, self.amr_model, randomise=self.randomise)
         init_state.reset_goal(self.goal_position, self.goal_sdf)
 
         self.laserscan_subscriber = rospy.Subscriber('/scan', LaserScan, self.laserscan_callback)
@@ -210,7 +211,7 @@ class SacEnv(gym.Env):
             self.goal_position[0] - self.spawn_position[0]
         )
 
-        init_state.reset_turtlebot3_gazebo(self.spawn_position, self.amr_model, randomise=True)
+        init_state.reset_turtlebot3_gazebo(self.spawn_position, self.amr_model, randomise=self.randomise)
         #init_state.reset_goal(self.goal_position, self.goal_sdf)
 
         self.done = False

@@ -62,6 +62,7 @@ class SacEnv(gym.Env):
             self.goal_position[1] - self.spawn_position[1], 
             self.goal_position[0] - self.spawn_position[0]
         )
+        self.goal_distance = self.goal_distance_from_spawn
         self.current_center = self.spawn_position
         self.current_distance_from_waypoint = 0.0
 
@@ -73,7 +74,7 @@ class SacEnv(gym.Env):
         self.total_timesteps = 0
         self.max_timesteps = max_timesteps
         self.step_count = 0
-        self.max_step_count = 600 if not test_mode else 5000
+        self.max_step_count = 600 if not test_mode else 2000
         self.stagnant_count = 0
         self.max_stagnant_count = 10
         self.reset_count = 0
@@ -81,9 +82,6 @@ class SacEnv(gym.Env):
 
         self.amr_model = amr_model
         self.epoch = epoch
-
-        self.goal_radius = 0.25
-        self.completion_count = 0
 
         self.grid_row = 384
         self.grid_col = 384
@@ -120,9 +118,11 @@ class SacEnv(gym.Env):
         self.randomise = not self.test_mode
 
         self.moving_obstacle_radius = 0.15
+        self.goal_radius = 0.25
         self.goal_sdf = sdf_templates.goal_sdf(self.goal_radius)
+        self.completion_count = 0
 
-        self.database = "data_v3_map_1.csv" if test_mode else "data_v3_train.csv"
+        self.database = "data_v3_map_1.csv" if self.test_mode else "data_v3_train.csv"
         self.data = data_collector.find_csv(
             self.database, 
             pd.DataFrame({
@@ -216,8 +216,9 @@ class SacEnv(gym.Env):
 
         goal_position = self.goal_position
         goal_distance_vector = goal_position - current_position
-        goal_distance = self.normalise_value(np.linalg.norm(goal_distance_vector), self.goal_distance_from_spawn)
-        goal_distance_normalised = (2 / (1 + np.exp(-3 * goal_distance))) - 1
+        self.goal_distance = np.linalg.norm(goal_distance_vector)
+        #goal_distance = self.normalise_value(np.linalg.norm(goal_distance_vector), self.goal_distance_from_spawn)
+        #goal_distance_normalised = (2 / (1 + np.exp(-3 * goal_distance))) - 1
 
         self.waypoint_closest, self.waypoint_min_distance = a_star._get_closest_waypoint(
             current_position, 
@@ -297,6 +298,7 @@ class SacEnv(gym.Env):
             self.goal_position[1] - self.spawn_position[1], 
             self.goal_position[0] - self.spawn_position[0]
         )
+        self.goal_distance = self.goal_distance_from_spawn
         self.current_center = self.spawn_position
         self.current_distance_from_waypoint = 0.0
 
@@ -405,6 +407,7 @@ class SacEnv(gym.Env):
         print(laserscan_closest_index)
 
         position = self.position
+        goal_distance = self.goal_distance
 
         step_count = self.step_count
         collision_threshold = self.normalise_value(self.laserscan_mincap + 0.01, self.laserscan_maxcap, self.laserscan_mincap)
@@ -452,15 +455,17 @@ class SacEnv(gym.Env):
 
         reward = 0.0
         
-        if self.waypoint_closest >= len(self.waypoints) - 1 and distance_from_waypoint < self.waypoint_min_distance_threshold: # Reached Goal
-            goal()
-        
-        def goal():
+        # Reached Goal
+        if (
+            self.waypoint_closest >= len(self.waypoints) - 1 and distance_from_waypoint < self.waypoint_min_distance_threshold and not self.test_mode
+        ) or (
+            self.waypoint_closest >= len(self.waypoints) - 1 and goal_distance < self.goal_radius and self.test_mode
+        ): 
             reward += 100.0 * reward_goal
             self.completion_count += 1
             self.end_episode(position[0], position[1], 1)
             print(f"!!!!!ROBOT GOAL REACHED!!!!!")
-            return float(reward)
+            return float(reward)     
 
         reward += 2.0 * reward_waypoint
         reward += 1.0 * reward_velocity
