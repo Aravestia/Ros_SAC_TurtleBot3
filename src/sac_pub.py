@@ -8,11 +8,11 @@ from stable_baselines3 import SAC
 import time
 import os
 
-#from sac_env_v1_basic import SacEnv
+from sac_env_v1_basic import SacEnv
 #from sac_env_v2_a_star import SacEnv
-from sac_env_v3_SAS import SacEnv
+#from sac_env_v3_SAS import SacEnv
 
-from initialisation.obstacle.obstacle_5 import Obstacle
+from initialisation.obstacle.obstacle_3 import Obstacle
 from initialisation.custom_stage.custom_stage_1 import CustomStage
 from initialisation import init_stage
 
@@ -23,21 +23,23 @@ def main(args=None):
     rospy.init_node('sac_pub', anonymous=True)
 
     test_mode = True
-    stage_custom = True
+    stage_custom = False
     stage_obstacle = True
     amr_model = 'turtlebot3_burger'
-    env_version = 3
-    model_version = "3.1"
+    env_version = 1
+    model_version = "1.1.1"
 
     model_pth = os.path.dirname(os.path.abspath(__file__))
     model_pth = os.path.join(model_pth, "models", f"v{env_version}", f"sac_model_v{model_version}.pth")
 
     if env_version == 1:
-        stage = 'local_minimum' if test_mode else 1
+        #stage = 'local_minimum' if test_mode else 1
+        stage = 1
     elif env_version == 2:
         stage = 'turtlebot_world' if test_mode else 'turtlebot_world_train'
     elif env_version == 3:
-        stage = 'local_minimum' if test_mode else 'local_minimum_train'
+        #stage = 'local_minimum' if test_mode else 'local_minimum_train'
+        stage = 1
     else:
         stage = None
 
@@ -87,6 +89,9 @@ def main(args=None):
                 )
 
                 #check_env(env)
+
+                model_pth = os.path.dirname(os.path.abspath(__file__))
+                model_pth = os.path.join(model_pth, "models", f"v{env_version}", f"sac_model_v{model_version}.pth")
 
                 print(f"model path exists: {os.path.exists(model_pth)}")
                 model = SAC.load(path=model_pth, env=env) if os.path.exists(model_pth) else SAC('MlpPolicy', env, ent_coef='auto', verbose=1)

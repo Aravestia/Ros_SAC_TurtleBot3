@@ -2,9 +2,9 @@ import numpy as np
 import pandas as pd
 import os
 
-def collect_data(dataframe, pos_x, pos_y, success, csv_name):
+def collect_data(dataframe, pos_x, pos_y, success, time_taken, csv_name):
     df = dataframe
-    df.loc[len(df)] = [len(df), pos_x, pos_y, success]
+    df.loc[len(df)] = [len(df), pos_x, pos_y, success, time_taken]
 
     dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), csv_name)
     df.to_csv(dir, index=False)

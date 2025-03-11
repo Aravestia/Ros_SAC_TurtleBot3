@@ -60,7 +60,7 @@ class SacEnv(gym.Env):
         self.truncated = False
         self.total_timesteps = 0
         self.step_count = 0
-        self.max_step_count = 500
+        self.max_step_count = 600 if not test_mode else 2000
         self.stagnant_count = 0
         self.max_stagnant_count = 10
         self.reset_count = 0
@@ -69,11 +69,11 @@ class SacEnv(gym.Env):
         self.amr_model = amr_model
         self.epoch = epoch
 
-        self.goal_radius = 0.2
+        self.goal_radius = 0.25
 
         self.goal_sdf = sdf_templates.goal_sdf(self.goal_radius)
 
-        self.database = "data_v1.csv" if test_mode else "data_v1_train.csv"
+        self.database = "data_v1_map_1.csv" if test_mode else "data_v1_train.csv"
         self.data = data_collector.find_csv(
             self.database, 
             pd.DataFrame({
@@ -81,8 +81,10 @@ class SacEnv(gym.Env):
                 'final position x': [],
                 'final position y': [],
                 'success': [],
+                'time taken': []
             })
         )
+        self.datetime = datetime.now()
 
         rospy.wait_for_service('/gazebo/set_model_state')
         rospy.wait_for_service('/gazebo/spawn_sdf_model')
@@ -222,6 +224,7 @@ class SacEnv(gym.Env):
         self.observation_state = self._get_observation_state()
 
         print(self.observation_state)
+        self.datetime = datetime.now()
 
         return self.observation_state, {}
 
@@ -290,7 +293,7 @@ class SacEnv(gym.Env):
 
         self.goal_distance_previous = goal_distance
 
-        reward_distance_from_goal = 1.0 * (1 - goal_distance_normalised)
+        reward_distance_from_goal = 1.0 * (2 / (1 + np.exp(5 * goal_distance_normalised)))
         reward_facing_goal = 0.2 if (
             (abs(goal_angle) < math.pi/4) and (laserscan_closest > 0.3)
         ) else 0
@@ -301,7 +304,7 @@ class SacEnv(gym.Env):
             -4.0 * (0.3 - laserscan_closest) / (0.3 - collision_threshold)
         )
         penalty_collision = -100
-        penalty_step_count = -0.5 * step_count / self.max_step_count
+        penalty_step_count = -1.0 * step_count / self.max_step_count
         penalty_step_count_maxed = -25
 
         if self.step_count >= self.max_step_count:
@@ -328,7 +331,8 @@ class SacEnv(gym.Env):
     
     def end_episode(self, pos_x, pos_y, success):
         self.goal_distance_record = 1.0
-        data_collector.collect_data(self.data, pos_x, pos_y, success, self.database)
+        time_taken = datetime.now() - self.datetime
+        data_collector.collect_data(self.data, pos_x, pos_y, success, time_taken, self.database)
         self.done = True
     
     def degree_to_radians(self, angle):

@@ -73,7 +73,7 @@ class SacEnv(gym.Env):
         self.total_timesteps = 0
         self.max_timesteps = max_timesteps
         self.step_count = 0
-        self.max_step_count = 1000 if not test_mode else 10000
+        self.max_step_count = 600 if not test_mode else 5000
         self.stagnant_count = 0
         self.max_stagnant_count = 10
         self.reset_count = 0
@@ -82,7 +82,7 @@ class SacEnv(gym.Env):
         self.amr_model = amr_model
         self.epoch = epoch
 
-        self.goal_radius = 0.2
+        self.goal_radius = 0.25
         self.completion_count = 0
 
         self.grid_row = 384
@@ -122,7 +122,7 @@ class SacEnv(gym.Env):
         self.moving_obstacle_radius = 0.15
         self.goal_sdf = sdf_templates.goal_sdf(self.goal_radius)
 
-        self.database = "data_v3.csv" if test_mode else "data_v3_train.csv"
+        self.database = "data_v3_map_1.csv" if test_mode else "data_v3_train.csv"
         self.data = data_collector.find_csv(
             self.database, 
             pd.DataFrame({
@@ -130,8 +130,10 @@ class SacEnv(gym.Env):
                 'final position x': [],
                 'final position y': [],
                 'success': [],
+                'time taken': []
             })
         )
+        self.datetime = datetime.now()
 
         rospy.wait_for_service('/gazebo/set_model_state')
         rospy.wait_for_service('/gazebo/spawn_sdf_model')
@@ -327,6 +329,7 @@ class SacEnv(gym.Env):
         rospy.sleep(0.2)
 
         print(self.observation_state)
+        self.datetime = datetime.now()
 
         return self.observation_state, {}
 
@@ -339,7 +342,7 @@ class SacEnv(gym.Env):
         
         self.observation_state = self._get_observation_state()
 
-        if self.waypoint_min_distance < self.waypoint_min_distance_threshold:
+        if self.waypoint_min_distance < self.waypoint_min_distance_threshold and self.waypoint_closest < len(self.waypoints) - 1:
             self.waypoint_closest += 1
 
         if not self.follower_mode:
@@ -449,7 +452,10 @@ class SacEnv(gym.Env):
 
         reward = 0.0
         
-        if self.waypoint_closest >= len(self.waypoints) - 1: # Reached Goal
+        if self.waypoint_closest >= len(self.waypoints) - 1 and distance_from_waypoint < self.waypoint_min_distance_threshold: # Reached Goal
+            goal()
+        
+        def goal():
             reward += 100.0 * reward_goal
             self.completion_count += 1
             self.end_episode(position[0], position[1], 1)
@@ -464,7 +470,7 @@ class SacEnv(gym.Env):
         reward += 2.0 * penalty_high_turning
         reward += 4.0 * penalty_facing_obstacle
         reward += 4.0 * penalty_obstacle_proximity
-        reward += 0.25 * penalty_step_count
+        reward += 3.0 * penalty_step_count
 
         if self.step_count >= self.max_step_count: # Maxed Step Count
            reward += 20.0 * penalty_step_count_maxed
@@ -480,7 +486,8 @@ class SacEnv(gym.Env):
         return float(reward)
     
     def end_episode(self, pos_x, pos_y, success):
-        data_collector.collect_data(self.data, pos_x, pos_y, success, self.database)
+        time_taken = datetime.now() - self.datetime
+        data_collector.collect_data(self.data, pos_x, pos_y, success, time_taken, self.database)
         self.done = True
     
     def degree_to_radians(self, angle):

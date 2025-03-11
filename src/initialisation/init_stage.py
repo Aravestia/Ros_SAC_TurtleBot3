@@ -6,7 +6,7 @@ def init_stage_positions(stage, epoch=0):
     init_choices = []
 
     if stage == 1:
-        init_positions = [[1, 1], [-1, -1]]
+        init_positions = [[-1, 0], [1, 0]]
     elif stage == 2:
         init_positions = [[1.25, 0.5], [0, 0]]   
     elif stage == 3:
@@ -36,7 +36,9 @@ def init_stage_positions(stage, epoch=0):
 def init_map(stage):
     maps = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "maps")
 
-    if stage == 2:
+    if stage == 1:
+        map = "map_stage1.pgm"
+    elif stage == 2:
         map = "map_stage2.pgm"
     elif stage == 'turtlebot_world_train':
         map = "map_turtlebot_world.pgm"
