@@ -5,7 +5,7 @@ from gazebo_msgs.srv import SetModelState, GetWorldProperties, SpawnModel, Delet
 from gazebo_msgs.msg import ModelState
 
 class CustomStage():
-    def __init__(self):
+    def __init__(self, custom_stage_id):
         rospy.wait_for_service('/gazebo/set_model_state')
         rospy.wait_for_service('/gazebo/get_world_properties')
         rospy.wait_for_service('/gazebo/spawn_sdf_model')
@@ -17,17 +17,21 @@ class CustomStage():
 
         self.delete_model("ros_symbol")
 
-        self.size = 3
-        self.thickness = 0.1
-        self.height = 1
+        self.size = 0
+        self.thickness = 0
+        self.height = 0
 
-        self.spawn_obstacle(self.size, 0, "wall_1", self.thickness, self.size * 2, self.height)
-        self.spawn_obstacle(-self.size, 0, "wall_2", self.thickness, self.size * 2, self.height)
-        self.spawn_obstacle(0, self.size, "wall_3", self.size * 2, self.thickness, self.height)
-        self.spawn_obstacle(0, -self.size, "wall_4", self.size * 2, self.thickness, self.height)
-
-        self.spawn_obstacle(1, 0.5, "wall_5", self.thickness, 3, self.height)
-        self.spawn_obstacle(-0.5, -1, "wall_6", 3, self.thickness, self.height)
+        if custom_stage_id == 1:
+            self.size = 3
+            self.thickness = 0.1
+            self.height = 1
+            
+            self.spawn_obstacle(self.size, 0, "wall_1_1", self.thickness, self.size * 2, self.height)
+            self.spawn_obstacle(-self.size, 0, "wall_1_2", self.thickness, self.size * 2, self.height)
+            self.spawn_obstacle(0, self.size, "wall_1_3", self.size * 2, self.thickness, self.height)
+            self.spawn_obstacle(0, -self.size, "wall_1_4", self.size * 2, self.thickness, self.height)
+            self.spawn_obstacle(1, 0.5, "wall_1_5", self.thickness, 3, self.height)
+            self.spawn_obstacle(-0.5, -1, "wall_1_6", 3, self.thickness, self.height)
     
     def spawn_obstacle(self, x, y, name, length, breadth, height):
         model_state_msg = ModelState()

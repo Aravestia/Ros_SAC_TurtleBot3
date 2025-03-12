@@ -7,42 +7,55 @@ from stable_baselines3 import SAC
 
 import time
 import os
+import json
+import importlib
 
-#from sac_env_v1_basic import SacEnv
-#from sac_env_v2_a_star import SacEnv
-from sac_env_v3_SAS import SacEnv
-
-from initialisation.obstacle.obstacle_3 import Obstacle
-from initialisation.custom_stage.custom_stage_1 import CustomStage
+from initialisation.init_obstacle import Obstacle
+from initialisation.init_custom_stage import CustomStage
 from initialisation import init_stage
 
 def main(args=None):
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "sac_pub_options"), 'r') as file:
+        options = json.load(file)
+    
     epochs = 10000
     timesteps = 3000
 
     rospy.init_node('sac_pub', anonymous=True)
 
-    test_mode = True
-    stage_custom = False
-    stage_obstacle = True
-    amr_model = 'turtlebot3_burger'
-    env_version = 3
-    model_version = "3.1.1"
+    test_mode = options["test_mode"]
+    stage_custom = options["stage_custom"]
+    stage_custom_id = options["stage_custom_id"]
+    stage_obstacle = options["stage_obstacle"]
+    stage_obstacle_id = options["stage_obstacle_id"]
+    amr_model = options["amr_model"]
+    env_version = options["env_version"]
+    model_version = options["model_version"]
+    stage_test_mode = options["stage_test_mode"]
+    stage_train_mode = options["stage_train_mode"]
+    
+    if env_version == 1:
+        from sac_env_v1_basic import SacEnv
+    elif env_version == 2:
+        from sac_env_v2_a_star import SacEnv
+    elif env_version == 3:
+        from sac_env_v3_SAS import SacEnv
+    else:
+        print("environment is invalid.")
+        return
 
     model_pth = os.path.dirname(os.path.abspath(__file__))
     model_pth = os.path.join(model_pth, "models", f"v{env_version}", f"sac_model_v{model_version}.pth")
 
-    #stage = 'local_minimum' if test_mode else 'local_minimum_train'
-    #stage = 'turtlebot_world' if test_mode else 'lturtlebot_world_train'
-    stage = 1
+    stage = stage_test_mode if test_mode else stage_train_mode
     stage_positions = init_stage.init_stage_positions(stage)
     stage_map = init_stage.init_map(stage)
 
     if stage_custom:
-        CustomStage()
+        CustomStage(stage_custom_id)
 
     if stage_obstacle:
-        Obstacle()
+        Obstacle(stage_obstacle_id)
 
     if test_mode:
         env = SacEnv(
