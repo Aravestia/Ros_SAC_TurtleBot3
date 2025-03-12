@@ -8,14 +8,13 @@ from stable_baselines3 import SAC
 import time
 import os
 import json
-import importlib
 
 from initialisation.init_obstacle import Obstacle
 from initialisation.init_custom_stage import CustomStage
 from initialisation import init_stage
 
 def main(args=None):
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "sac_pub_options"), 'r') as file:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "sac_pub_options.json"), 'r') as file:
         options = json.load(file)
     
     epochs = 10000

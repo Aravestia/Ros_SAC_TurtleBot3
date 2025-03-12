@@ -1,12 +1,12 @@
 {
   "test_mode" : true,
-  "stage_custom" : false,
+  "stage_custom" : true,
   "stage_custom_id" : 1,
   "stage_obstacle" : true,
-  "stage_obstacle_id" : 1,
+  "stage_obstacle_id" : 3,
   "amr_model" : "turtlebot3_burger",
   "env_version" : 3,
   "model_version" : "3.1.1",
-  "stage_test_mode" : 1,
-  "stage_train_mode" : 1
+  "stage_test_mode" : "local_minimum",
+  "stage_train_mode" : "local_minimum_train"
 }

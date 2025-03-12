@@ -122,7 +122,7 @@ class SacEnv(gym.Env):
         self.goal_sdf = sdf_templates.goal_sdf(self.goal_radius)
         self.completion_count = 0
 
-        self.database = "data_v3_map_1.csv" if self.test_mode else "data_v3_train.csv"
+        self.database = "data_v3_map_2.csv" if self.test_mode else "data_v3_train.csv"
         self.data = data_collector.find_csv(
             self.database, 
             pd.DataFrame({
