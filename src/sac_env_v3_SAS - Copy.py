@@ -122,7 +122,7 @@ class SacEnv(gym.Env):
         self.goal_sdf = sdf_templates.goal_sdf(self.goal_radius)
         self.completion_count = 0
 
-        self.database = "data_map_1_ideal_path.csv" if self.test_mode else "data_v3_train.csv"
+        self.database = "data_v3_map_2.csv" if self.test_mode else "data_v3_train.csv"
         self.data = data_collector.find_csv(
             self.database, 
             pd.DataFrame({
@@ -347,23 +347,23 @@ class SacEnv(gym.Env):
         if self.waypoint_min_distance < self.waypoint_min_distance_threshold and self.waypoint_closest < len(self.waypoints) - 1:
             self.waypoint_closest += 1
 
-        '''if not self.follower_mode:
+        if not self.follower_mode:
             self.velocity = float(action[0])
             self.angular_velocity = float(action[1])
-        else:'''
-        min_velocity = 0.0
-        turning_rate = 1.0 / self.angular_velocity_multiplier
-        angle_threshold = 0.15
-
-        if self.waypoint_closest_angle < -angle_threshold:
-            self.angular_velocity = -turning_rate
-            self.velocity = min_velocity
-        elif self.waypoint_closest_angle > angle_threshold:
-            self.angular_velocity = turning_rate
-            self.velocity = min_velocity
         else:
-            self.angular_velocity = 0.0
-            self.velocity = 1.0
+            min_velocity = 0.0
+            turning_rate = 1.0 / self.angular_velocity_multiplier
+            angle_threshold = 0.15
+
+            if self.waypoint_closest_angle < -angle_threshold:
+                self.angular_velocity = -turning_rate
+                self.velocity = min_velocity
+            elif self.waypoint_closest_angle > angle_threshold:
+                self.angular_velocity = turning_rate
+                self.velocity = min_velocity
+            else:
+                self.angular_velocity = 0.0
+                self.velocity = 1.0
 
         self.publish_velocity(
             velocity=(self.velocity + 1.0) * 0.5 * self.velocity_multiplier,

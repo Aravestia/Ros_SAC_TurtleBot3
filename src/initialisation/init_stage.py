@@ -28,6 +28,10 @@ def init_stage_positions(stage, epoch=0):
         init_positions = [[-0.5, 0.5], [1.75, 0]]
     elif stage == 'local_minimum_train':
         init_positions = [[1.75, 1.6], [1.75, 0]]
+    elif stage == 'local_minimum_ideal_path':
+        init_positions = [[-0.5, 0.5], [1.75, 0]]
+    elif stage == "stage_1_ideal_path":
+        init_positions = [[-1, 0], [1, 0]]
     else:
         return None
 
@@ -48,6 +52,10 @@ def init_map(stage):
         map = "map_local_minimum.pgm"
     elif stage == 'local_minimum_train':
         map = "map_local_minimum.pgm"
+    elif stage == 'local_minimum_ideal_path':
+        map = "map_local_minimum_ideal_path.pgm"
+    elif stage == 'stage_1_ideal_path':
+        map = "map_stage_1_ideal_path.pgm"
     else:
         return None
 
