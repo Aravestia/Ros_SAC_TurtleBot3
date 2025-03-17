@@ -5,8 +5,9 @@
   "stage_obstacle" : true,
   "stage_obstacle_id" : 3,
   "amr_model" : "turtlebot3_burger",
-  "env_version" : 1,
-  "model_version" : "1.1.1",
+  "env_version" : 3,
+  "model_version" : "3.1.1",
   "stage_test_mode" : "local_minimum",
-  "stage_train_mode" : "local_minimum_train"
+  "stage_train_mode" : "local_minimum_train",
+  "timesteps" : 3000
 }

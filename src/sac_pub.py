@@ -18,7 +18,7 @@ def main(args=None):
         options = json.load(file)
     
     epochs = 10000
-    timesteps = 3000
+    timesteps = options["timesteps"]
 
     rospy.init_node('sac_pub', anonymous=True)
 
@@ -35,8 +35,6 @@ def main(args=None):
     
     if env_version == 1:
         from sac_env_v1_basic import SacEnv
-    elif env_version == 2:
-        from sac_env_v2_a_star import SacEnv
     elif env_version == 3:
         from sac_env_v3_SAS import SacEnv
     else:
